@@ -35,12 +35,44 @@ To manually connect with all required permissions, use:
 $scriptDir = $PSScriptRoot
 
 #===========================================================================
+# APP VERSION
+#===========================================================================
+$script:AppVersion = "1.1.0"
+
+#===========================================================================
+# ENSURE STA MODE (required by WPF)
+#===========================================================================
+# WPF can only run on a Single-Threaded Apartment (STA) thread. PowerShell 7 and
+# the ISE are STA by default, but a plain Windows PowerShell console is MTA.
+# Instead of failing, relaunch ourselves in the same console with -STA.
+if ([System.Threading.Thread]::CurrentThread.ApartmentState -ne [System.Threading.ApartmentState]::STA) {
+    Write-Host "The WPF interface requires STA mode - relaunching PowerShell with -STA ..." -ForegroundColor Cyan
+    $psExe = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh' } else { 'powershell.exe' }
+    & $psExe -STA -ExecutionPolicy Bypass -File $PSCommandPath
+    exit $LASTEXITCODE
+}
+
+#===========================================================================
 # CHECK & INSTALL REQUIRED MICROSOFT GRAPH MODULES
 #===========================================================================
-$requiredModule = "Microsoft.Graph"
+# Only the Microsoft.Graph submodules this tool actually uses are installed -
+# NOT the full Microsoft.Graph meta-module (40+ modules) - keeping the first
+# run to a couple of minutes instead of 10-20.
+$requiredModules = @(
+    "Microsoft.Graph.Authentication",               # Connect/Disconnect-MgGraph, Invoke-MgGraphRequest
+    "Microsoft.Graph.DeviceManagement",             # Managed devices (get/remove/retire)
+    "Microsoft.Graph.DeviceManagement.Enrollment",  # Autopilot device identities
+    "Microsoft.Graph.Devices.CorporateManagement",  # Mobile apps (imported by background runspaces)
+    "Microsoft.Graph.Groups",                       # Group membership add/remove
+    "Microsoft.Graph.Users",                        # User lookups
+    "Microsoft.Graph.Identity.DirectoryManagement"  # Entra ID device records
+)
 
-if (-not (Get-Module -ListAvailable -Name $requiredModule)) {
-    Write-Host "Required module '$requiredModule' is not installed." -ForegroundColor Yellow
+$missingModules = @($requiredModules | Where-Object { -not (Get-Module -ListAvailable -Name $_) })
+
+if ($missingModules.Count -gt 0) {
+    Write-Host "The following required modules are not installed:" -ForegroundColor Yellow
+    $missingModules | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
 
     # Determine install scope based on whether we are running as administrator
     $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
@@ -55,24 +87,46 @@ if (-not (Get-Module -ListAvailable -Name $requiredModule)) {
         Write-Host "Running without Administrator privileges – modules will be installed for the current user only." -ForegroundColor Cyan
     }
 
-    try {
-        Write-Host "Installing $requiredModule (Scope: $installScope) ..." -ForegroundColor Cyan
-        Install-Module -Name $requiredModule -Scope $installScope -Force -AllowClobber -ErrorAction Stop
-        Write-Host "$requiredModule installed successfully." -ForegroundColor Green
-    }
-    catch {
-        Write-Host "ERROR: Failed to install $requiredModule – $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "Please install it manually:  Install-Module -Name $requiredModule -Scope $installScope" -ForegroundColor Red
-        exit 1
+    foreach ($module in $missingModules) {
+        try {
+            Write-Host "Installing $module (Scope: $installScope) ..." -ForegroundColor Cyan
+            Install-Module -Name $module -Scope $installScope -Force -AllowClobber -ErrorAction Stop
+            Write-Host "$module installed successfully." -ForegroundColor Green
+        }
+        catch {
+            Write-Host "ERROR: Failed to install $module – $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "Please install it manually:  Install-Module -Name $module -Scope $installScope" -ForegroundColor Red
+            exit 1
+        }
     }
 }
 
 Import-Module "$scriptDir\graphFunctions.psm1" -Force
 Import-Module "$scriptDir\otherFunctions.psm1" -Force
 
+#===========================================================================
+# OPTIONAL CONFIGURATION FILE (config.json next to the script)
+#===========================================================================
+# Supported settings:
+#   { "ExportDirectory": "D:\\IntuneToolLogs" }
+# When not present (or invalid), logs/exports default to C:\Temp with an
+# automatic fallback to the user's %TEMP% folder if C:\Temp is not writable.
+$configPath = Join-Path $scriptDir "config.json"
+if (Test-Path $configPath) {
+    try {
+        $appConfig = Get-Content -Path $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($appConfig.ExportDirectory -and -not [string]::IsNullOrWhiteSpace($appConfig.ExportDirectory)) {
+            Set-ExportDirectory -Path $appConfig.ExportDirectory | Out-Null
+        }
+    }
+    catch {
+        Write-Host "Warning: Could not read config.json – using default export directory. $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 # Initialize logging
 $script:AppLogPath = Initialize-AppLogging
-Write-AppLog -Message "The Powerful Intune Bulk Actions Tool starting" -Level "INFO"
+Write-AppLog -Message "The Powerful Intune Bulk Actions Tool v$script:AppVersion starting" -Level "INFO"
 Write-AppLog -Message "Script directory: $scriptDir" -Level "DEBUG"
 
 #===========================================================================
@@ -581,6 +635,9 @@ catch{
     Write-Warning "Unable to parse XML, with error: $($Error[0])`n Ensure that there are NO SelectionChanged or TextChanged properties in your textboxes (PowerShell cannot process them)"
     throw
 }
+
+# Show the app version in the window title
+$Form.Title = "The Powerful Intune Bulk Actions Tool  -  v$script:AppVersion"
  
 #===========================================================================
 # Load XAML Objects In PowerShell
@@ -3702,19 +3759,9 @@ $WPFExportActionButton.Add_Click({
 })
 
 
-#Adding items to a dropdown/combo box
-    #$vmpicklistView.items.Add([pscustomobject]@{'VMName'=($_).Name;Status=$_.Status;Other="Yes"})
-     
-#Setting the text of a text box to the current PC name    
-    #$WPFtextBox.Text = $env:COMPUTERNAME
-     
-#Adding code to a button, so that when clicked, it pings a system
-# $WPFbutton.Add_Click({ Test-connection -count 1 -ComputerName $WPFtextBox.Text
-# })
 #===========================================================================
 # Shows the form
 #===========================================================================
-'$Form.ShowDialog() | out-null'
 
 # Add event handler for when the form is closing
 $Form.Add_Closing({

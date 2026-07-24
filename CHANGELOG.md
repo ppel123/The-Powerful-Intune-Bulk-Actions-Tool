@@ -12,6 +12,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [1.1.0] — 2026-07-24
+
+### Changed
+
+- **Modernized UI** — complete visual refresh of the WPF interface using pure XAML styles and control templates (no new dependencies): Fluent-style tabs, card layout, restyled buttons/inputs/dropdowns/checkboxes, pill connection-status badges, color-coded Activity Log levels, and a redesigned busy overlay
+- **Faster first run** — only the required `Microsoft.Graph` submodules are installed instead of the full meta-module (7 modules instead of 40+)
+- **Automatic STA relaunch** — running `.\script.ps1` from a plain (MTA) Windows PowerShell console now relaunches itself with `-STA` automatically; the manual `-STA` flag is no longer needed
+- **Configurable export/log directory** — optional `config.json` next to `script.ps1` (`{ "ExportDirectory": "D:\\Path" }`); when the configured or default `C:\Temp` location is not writable, the tool falls back to `%TEMP%\IntuneTool` automatically
+- App version is now shown in the window title and logged at startup
+
+### Fixed
+
+- Removed a stray quoted line that printed `$Form.ShowDialog() | out-null` to the console on every launch
+
+---
+
 ## [1.0.0] — 2026-03-15
 
 ### Initial Release

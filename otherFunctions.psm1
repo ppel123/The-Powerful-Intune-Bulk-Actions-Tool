@@ -1,4 +1,4 @@
-#region Logging Functions
+﻿#region Logging Functions
 # Global log file path - will be initialized when the app starts
 $script:LogFilePath = $null
 
@@ -62,11 +62,30 @@ function Get-ExportDirectory {
         C:\Temp\20260315. The subfolder is created automatically if it does not exist.
     .OUTPUTS
         Returns the full path to today's working directory, e.g. C:\Temp\20260315
+    .NOTES
+        If the configured base directory cannot be created or written to (e.g. a
+        locked-down machine where C:\Temp is not allowed), the function falls back
+        to a IntuneTool folder inside the user's %TEMP% directory.
     #>
     $base = if ([string]::IsNullOrWhiteSpace($script:BaseExportDirectory)) { "C:\Temp" } else { $script:BaseExportDirectory }
-    $dated = Join-Path $base (Get-Date -Format "yyyyMMdd")
-    if (-not (Test-Path $dated)) {
-        New-Item -ItemType Directory -Path $dated -Force | Out-Null
+    $dateFolder = Get-Date -Format "yyyyMMdd"
+    try {
+        $dated = [System.IO.Path]::Combine($base, $dateFolder)
+        if (-not (Test-Path -LiteralPath $dated)) {
+            New-Item -ItemType Directory -Path $dated -Force -ErrorAction Stop | Out-Null
+        }
+    }
+    catch {
+        # Configured base is not writable - fall back to the user's temp directory
+        $fallbackBase = [System.IO.Path]::Combine($env:TEMP, "IntuneTool")
+        $dated = [System.IO.Path]::Combine($fallbackBase, $dateFolder)
+        if (-not (Test-Path -LiteralPath $dated)) {
+            New-Item -ItemType Directory -Path $dated -Force | Out-Null
+        }
+        if ($script:BaseExportDirectory -ne $fallbackBase) {
+            Write-Host "Warning: Cannot write to '$base' – falling back to '$fallbackBase'" -ForegroundColor Yellow
+            $script:BaseExportDirectory = $fallbackBase
+        }
     }
     return $dated
 }
@@ -1193,6 +1212,7 @@ function Set-IntuneDeviceName {
 Export-ModuleMember -Function @(
     # Configuration functions
     'Get-ExportDirectory',
+    'Set-ExportDirectory',
     
     # Logging functions
     'Initialize-AppLogging',
@@ -1220,7 +1240,6 @@ Export-ModuleMember -Function @(
 )
 
 # Note: The following functions are currently unused but kept for potential future use:
-# - Set-ExportDirectory: For setting custom export paths (currently hardcoded)
 # - Write-AppLogDeviceList: For logging device lists (not called anywhere)
 # - Measure-Operation: For timing operations (not called anywhere)
 # - New-ErrorResult: For creating error result objects (not called anywhere)

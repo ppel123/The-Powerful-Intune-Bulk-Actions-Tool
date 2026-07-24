@@ -1,4 +1,4 @@
-
+﻿
 function Test-MGGraphConnection{
     $currentConnection = Get-MgContext
     Write-AppLog -Message "Checking Graph connection status" -Level "DEBUG" -Details "Current session: $currentConnection"

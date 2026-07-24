@@ -26,19 +26,18 @@ At the heart of the tool is ultimate flexibility. For most reporting and action 
 
 ### Prerequisites
 * **PowerShell 5.1+** (Fully tested and supported on PowerShell 7, VS Code integrated terminal, and PowerShell ISE).
-* **Microsoft Graph PowerShell SDK** (`Microsoft.Graph` module).  
-The tool **automatically checks** if the module is installed when it starts. If not found, it will attempt to install it for you:
+* **Microsoft Graph PowerShell SDK** — only the required submodules, **not** the full `Microsoft.Graph` meta-module.  
+The tool **automatically checks** if the modules are installed when it starts. Any missing ones are installed for you (this takes a couple of minutes on first run, instead of the 10–20 minutes the full SDK would need):
   - **Running as Administrator:** installs for all users (`-Scope AllUsers`).
   - **Running without Administrator privileges:** installs for the current user only (`-Scope CurrentUser`) — **no admin rights required**.
 
-  If you prefer to install it manually beforehand:
+  If you prefer to install them manually beforehand:
   ```powershell
-  # As Administrator (installs for all users)
-  Install-Module -Name Microsoft.Graph -Force -AllowClobber
-
-  # Without Administrator privileges (installs for current user only)
-  Install-Module -Name Microsoft.Graph -Scope CurrentUser -Force -AllowClobber
+  # Add -Scope CurrentUser to install without Administrator privileges
+  Install-Module -Name Microsoft.Graph.Authentication, Microsoft.Graph.DeviceManagement, Microsoft.Graph.DeviceManagement.Enrollment, Microsoft.Graph.Devices.CorporateManagement, Microsoft.Graph.Groups, Microsoft.Graph.Users, Microsoft.Graph.Identity.DirectoryManagement -Force -AllowClobber
   ```
+
+  > Already have the full `Microsoft.Graph` meta-module installed? That works too — no reinstall needed.
 
 *(Don't worry about scopes, the tool handles authentication and automatically prompts you for the required Microsoft Graph permissions upon sign-in).*
 
@@ -60,13 +59,26 @@ The tool **automatically checks** if the module is installed when it starts. If 
 VS Code's PowerShell extension launches the script with the correct threading mode automatically — no extra flags needed.
 
 **Option 2 — Standalone PowerShell terminal:**
-
-The UI is built on WPF, which requires **Single-Threaded Apartment (STA)** mode. Run:
 ```powershell
-powershell.exe -STA -File ".\script.ps1"
+.\script.ps1
 ```
 
-> ⚠️ Running `.\script.ps1` directly from a plain PowerShell prompt (without `-STA`) will likely fail to load the interface.
+The UI is built on WPF, which requires **Single-Threaded Apartment (STA)** mode — but you don't need to worry about it: if the script detects it is running in MTA mode (the default for a plain Windows PowerShell console), it **automatically relaunches itself with `-STA`** in the same console. PowerShell 7 and the ISE are STA by default.
+
+## ⚙️ Configuration (optional)
+
+By default, session logs and CSV exports are written to `C:\Temp\YYYYMMDD\`. If that location cannot be created or written to (e.g. on a locked-down machine), the tool automatically falls back to `%TEMP%\IntuneTool\YYYYMMDD\`.
+
+To use a custom location instead, create a `config.json` file next to `script.ps1`:
+```json
+{
+  "ExportDirectory": "D:\\IntuneToolLogs"
+}
+```
+
+## ⚠️ Note on Graph API Endpoints
+
+Several features (Autopilot device identities, non-compliance reports, detected apps, group membership lookups, and more) rely on the **`beta`** Microsoft Graph endpoint (`https://graph.microsoft.com/beta/...`), because the required functionality is not available in `v1.0`. Microsoft can change beta endpoints without notice — if a specific report or action suddenly stops working after having worked before, this is the most likely cause. Please open an Issue if you hit one.
 
 ## 📸 GIF  
 

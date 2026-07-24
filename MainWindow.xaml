@@ -5,407 +5,947 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:IntuneTool"
         mc:Ignorable="d"
-        Title="The Powerful Intune Bulk Actions Tool" HorizontalAlignment="Stretch" Margin="0,0,0,0" VerticalAlignment="Stretch" Height="600" Width="1050">
+        Title="The Powerful Intune Bulk Actions Tool"
+        Height="690" Width="1120" MinHeight="620" MinWidth="1000"
+        WindowStartupLocation="CenterScreen"
+        Background="#F0F2F5"
+        FontFamily="Segoe UI Variable Text, Segoe UI"
+        FontSize="13"
+        Foreground="#1F2937"
+        UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display">
+
+    <Window.Resources>
+
+        <!-- ============ Color Palette ============ -->
+        <SolidColorBrush x:Key="AccentBrush" Color="#0078D4"/>
+        <SolidColorBrush x:Key="AccentDarkBrush" Color="#0F6CBD"/>
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF"/>
+        <SolidColorBrush x:Key="CardBorderBrush" Color="#E1E5EA"/>
+        <SolidColorBrush x:Key="InputBorderBrush" Color="#C6CFD9"/>
+        <SolidColorBrush x:Key="InputBorderHoverBrush" Color="#98A6B5"/>
+        <SolidColorBrush x:Key="TextPrimaryBrush" Color="#1F2937"/>
+        <SolidColorBrush x:Key="TextSecondaryBrush" Color="#5B6B7B"/>
+        <SolidColorBrush x:Key="DangerBrush" Color="#D93025"/>
+
+        <!-- ============ Card ============ -->
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
+
+        <!-- ============ Labels ============ -->
+        <Style TargetType="Label">
+            <Setter Property="Foreground" Value="#33475B"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="0,4"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+
+        <!-- ============ Status Badge (pill) ============ -->
+        <Style x:Key="StatusBadge" TargetType="Label">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Label">
+                        <Border CornerRadius="13"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1"
+                                Padding="12,5">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ============ Buttons ============ -->
+        <Style x:Key="BaseButton" TargetType="Button">
+            <Setter Property="Background" Value="#FFFFFF"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource InputBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="14,7"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border Name="Chrome" CornerRadius="6"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"/>
+                            <Border Name="Shade" CornerRadius="6" Background="#000000" Opacity="0" IsHitTestVisible="False"/>
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              TextBlock.TextAlignment="Center"
+                                              RecognizesAccessKey="True"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Shade" Property="Opacity" Value="0.07"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Shade" Property="Opacity" Value="0.14"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="Button" BasedOn="{StaticResource BaseButton}"/>
+
+        <Style x:Key="AccentButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
+            <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+
+        <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
+            <Setter Property="Background" Value="{StaticResource DangerBrush}"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+
+        <!-- ============ TextBox ============ -->
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#FFFFFF"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource InputBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Name="Bd" CornerRadius="6"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                SnapsToDevicePixels="True">
+                            <ScrollViewer Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource InputBorderHoverBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsReadOnly" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#F9FAFC"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ============ ComboBox ============ -->
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border Name="Bd" CornerRadius="5" Margin="4,1"
+                                Background="Transparent"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#EAF2FB"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#DCEAFB"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="#FFFFFF"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource InputBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="MinHeight" Value="32"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border Name="Bd" CornerRadius="6"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    SnapsToDevicePixels="True"/>
+                            <ToggleButton Name="ToggleBtn" Focusable="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="Transparent">
+                                            <Path Data="M 0 0 L 4.5 4.5 L 9 0"
+                                                  Stroke="#5B6B7B" StrokeThickness="1.8"
+                                                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                  Margin="0,1,12,0" SnapsToDevicePixels="False"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter Name="SelectionPresenter" IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                              Margin="12,0,30,0"
+                                              VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                            <Popup Name="PART_Popup" Placement="Bottom" HorizontalOffset="-8"
+                                   AllowsTransparency="True" PopupAnimation="Fade" Focusable="False"
+                                   IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}">
+                                <Grid Margin="8">
+                                    <Border Name="DropDownBorder"
+                                            Background="#FFFFFF"
+                                            BorderBrush="#D5DCE4" BorderThickness="1" CornerRadius="8"
+                                            SnapsToDevicePixels="True"
+                                            MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                            MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                        <Border.Effect>
+                                            <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.18"/>
+                                        </Border.Effect>
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                            <ItemsPresenter Margin="0,4" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                        </ScrollViewer>
+                                    </Border>
+                                </Grid>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource InputBorderHoverBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsDropDownOpen" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ============ CheckBox ============ -->
+        <Style TargetType="CheckBox">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid Background="Transparent">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Name="Box" Width="18" Height="18" CornerRadius="4"
+                                    Background="#FFFFFF" BorderBrush="#9AA7B4" BorderThickness="1.5"
+                                    VerticalAlignment="Center"/>
+                            <Path Name="Check" Data="M 4 9.5 L 7.5 13 L 14 5.5"
+                                  Stroke="#FFFFFF" StrokeThickness="2"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                  Width="18" Height="18" Stretch="None"
+                                  VerticalAlignment="Center" HorizontalAlignment="Center"
+                                  Visibility="Collapsed"/>
+                            <ContentPresenter Grid.Column="1" Margin="8,0,0,0"
+                                              VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="{StaticResource AccentBrush}"/>
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ============ TabControl / TabItem ============ -->
+        <Style TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <Border Grid.Row="0" Background="#FFFFFF"
+                                    BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="0,0,0,1"
+                                    Padding="10,4,10,0">
+                                <TabPanel IsItemsHost="True" Background="Transparent"/>
+                            </Border>
+                            <ContentPresenter Grid.Row="1" Name="PART_SelectedContentHost" ContentSource="SelectedContent"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TabItem">
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Grid>
+                            <Border Name="Bd" CornerRadius="6" Background="Transparent" Margin="2,4,2,6" Padding="16,7">
+                                <ContentPresenter ContentSource="Header" VerticalAlignment="Center" HorizontalAlignment="Center" RecognizesAccessKey="True"/>
+                            </Border>
+                            <Border Name="Underline" Height="3" CornerRadius="1.5"
+                                    Background="{StaticResource AccentBrush}"
+                                    VerticalAlignment="Bottom" Margin="14,0,14,0"
+                                    Visibility="Collapsed"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#EDF2F7"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Underline" Property="Visibility" Value="Visible"/>
+                                <Setter Property="Foreground" Value="{StaticResource AccentDarkBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ============ ListView ============ -->
+        <Style TargetType="ListView">
+            <Setter Property="Background" Value="#FFFFFF"/>
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="AlternationCount" Value="2"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+        </Style>
+
+        <Style TargetType="ListViewItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="6,5"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListViewItem">
+                        <Border Name="Bd" Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <GridViewRowPresenter Content="{TemplateBinding Content}"
+                                                  Columns="{TemplateBinding GridView.ColumnCollection}"
+                                                  VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="ItemsControl.AlternationIndex" Value="1">
+                                <Setter TargetName="Bd" Property="Background" Value="#F7F9FC"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#EDF3FA"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#D9E9FB"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="GridViewColumnHeader">
+            <Setter Property="Foreground" Value="#44546A"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GridViewColumnHeader">
+                        <Grid>
+                            <Border Name="Bd" Background="#F5F7FA"
+                                    BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="0,0,1,1"
+                                    Padding="8,7">
+                                <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                            </Border>
+                            <Thumb Name="PART_HeaderGripper" HorizontalAlignment="Right" Width="8" Margin="0,0,-4,0" Cursor="SizeWE">
+                                <Thumb.Template>
+                                    <ControlTemplate TargetType="Thumb">
+                                        <Border Background="Transparent"/>
+                                    </ControlTemplate>
+                                </Thumb.Template>
+                            </Thumb>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#EDF1F6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ============ Expander ============ -->
+        <Style TargetType="Expander">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Expander">
+                        <Border CornerRadius="8" Background="#FFFFFF"
+                                BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                                SnapsToDevicePixels="True">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <ToggleButton Grid.Row="0" Cursor="Hand" Focusable="False"
+                                              Content="{TemplateBinding Header}"
+                                              IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <ToggleButton.Template>
+                                        <ControlTemplate TargetType="ToggleButton">
+                                            <Border Background="Transparent" Padding="14,9">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Path Name="Arrow" Data="M 0 0 L 4.5 4.5 L 9 0"
+                                                          Stroke="#5B6B7B" StrokeThickness="1.8"
+                                                          VerticalAlignment="Center" Margin="0,1,10,0"
+                                                          RenderTransformOrigin="0.5,0.5" SnapsToDevicePixels="False"/>
+                                                    <ContentPresenter Grid.Column="1" VerticalAlignment="Center"
+                                                                      TextElement.FontWeight="SemiBold"
+                                                                      TextElement.Foreground="#33475B"/>
+                                                </Grid>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsChecked" Value="True">
+                                                    <Setter TargetName="Arrow" Property="RenderTransform">
+                                                        <Setter.Value>
+                                                            <RotateTransform Angle="180"/>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </ToggleButton.Template>
+                                </ToggleButton>
+                                <ContentPresenter Grid.Row="1" Name="ExpandSite" Visibility="Collapsed" Margin="12,0,12,12"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="True">
+                                <Setter TargetName="ExpandSite" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ============ ToolTip ============ -->
+        <Style TargetType="ToolTip">
+            <Setter Property="Background" Value="#2B3440"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="HasDropShadow" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToolTip">
+                        <Border CornerRadius="6" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+    </Window.Resources>
+
     <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="291*"/>
-            <ColumnDefinition Width="34*"/>
-            <ColumnDefinition Width="8*"/>
-            <ColumnDefinition Width="41*"/>
-            <ColumnDefinition Width="67*"/>
-            <ColumnDefinition Width="306*"/>
-        </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TabControl x:Name="MainTabControl" Grid.ColumnSpan="6" Grid.Row="0">
-            <TabItem x:Name="MainTab" Header="Main Tab" AutomationProperties.Name="MainTab">
-                <Grid Background="#FFE5E5E5">
+
+        <TabControl x:Name="MainTabControl" Grid.Row="0">
+
+            <!-- ================================ HOME TAB ================================ -->
+            <TabItem x:Name="MainTab" Header="🏠  Home" AutomationProperties.Name="MainTab">
+                <Grid Margin="16">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="220"/>
+                        <ColumnDefinition Width="250"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    
-                    <!-- Left Column: Image and Buttons -->
-                    <StackPanel Grid.Column="0" Grid.Row="0" Grid.RowSpan="3" Margin="10">
-                        <Image x:Name="MainImage" Height="120" Width="120" Source="/MainImage.png" Stretch="Uniform" HorizontalAlignment="Center"/>
-                        <Button x:Name="SignInButtonCopy" Content="Sign-In HERE FIRST" Height="53" Margin="0,20,0,10" FontSize="18" FontWeight="Bold" FontFamily="Bahnschrift" ToolTip="Connect to Microsoft Graph with your credentials to access Intune data"/>
-                        <Button x:Name="DisconnectBtn" Content="Disconnect" Height="53" Margin="0,0,0,20" FontSize="18" FontWeight="Bold" FontFamily="Bahnschrift" ToolTip="Disconnect from Microsoft Graph and clear session"/>
-                        <Label x:Name="NotConnectedLabel" Content="Not Connected Yet" FontWeight="Bold" Foreground="#FFE62020" FontSize="18" HorizontalContentAlignment="Center"/>
-                        <StackPanel x:Name="ConnectedPanel" Visibility="Collapsed" HorizontalAlignment="Center">
-                            <Label x:Name="Connected" Content="Connected" Foreground="#FF2BFF00" FontSize="18" FontWeight="Bold" HorizontalContentAlignment="Center"/>
-                            <TextBlock x:Name="LastSyncTimeLabel" Text="" FontSize="11" Foreground="#FF666666" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
+
+                    <!-- Left Column: Logo, Sign-in, Connection status -->
+                    <Border Style="{StaticResource Card}" Grid.Column="0" Padding="18">
+                        <StackPanel>
+                            <Image x:Name="MainImage" Height="110" Width="110" Source="/MainImage.png" Stretch="Uniform" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                            <Button x:Name="SignInButtonCopy" Style="{StaticResource AccentButton}" Content="Sign In — Start Here" Height="42" Margin="0,24,0,10" FontSize="14" ToolTip="Connect to Microsoft Graph with your credentials to access Intune data"/>
+                            <Button x:Name="DisconnectBtn" Content="Disconnect" Height="36" Margin="0,0,0,22" FontSize="13" ToolTip="Disconnect from Microsoft Graph and clear session"/>
+                            <Label x:Name="NotConnectedLabel" Style="{StaticResource StatusBadge}" Content="●  Not Connected" Background="#FDECEA" BorderBrush="#F5C6C0" Foreground="#C5221F"/>
+                            <StackPanel x:Name="ConnectedPanel" Visibility="Collapsed" HorizontalAlignment="Center">
+                                <Label x:Name="Connected" Style="{StaticResource StatusBadge}" Content="●  Connected" Background="#E6F4EA" BorderBrush="#C8E6C9" Foreground="#137333"/>
+                                <TextBlock x:Name="LastSyncTimeLabel" Text="" FontSize="11" Foreground="#6B7A89" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="0,6,0,0"/>
+                            </StackPanel>
                         </StackPanel>
-                    </StackPanel>
-                    
-                    <!-- Right Column: Title and Text -->
-                    <Label Grid.Column="1" Grid.Row="0" Content="The Powerful Intune Bulk Actions Tool" Margin="10,10,10,5" FontSize="20" HorizontalContentAlignment="Center" FontWeight="Bold" VerticalAlignment="Top"/>
-                    <TextBlock x:Name="MainTextBox" Grid.Column="1" Grid.Row="1" Margin="10,5,10,10" TextWrapping="Wrap" FontSize="15" VerticalAlignment="Top">
-                        <Run Text="The Powerful Intune Bulk Actions Tool is here to help every Intune administrator to effectively manage endpoints by automating various reporting and administrative tasks."/>
-                        <LineBreak/><LineBreak/>
+                    </Border>
 
-                        <Run FontWeight="Bold" Text="📊 Reporting Tab"/>
-                        <LineBreak/>
-                        <Run Text="Open the "/>
-                        <Run FontWeight="Bold" Text="Reporting Tab"/>
-                        <Run Text=" to run device reports — including device info, BitLocker status, compliance, group membership, OS distribution, detected apps, and more. Results can be exported to CSV."/>
-                        <LineBreak/><LineBreak/>
+                    <!-- Right Column: Title and welcome text -->
+                    <Border Style="{StaticResource Card}" Grid.Column="1" Margin="16,0,0,0" Padding="26,20">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <Label Content="The Powerful Intune Bulk Actions Tool" FontSize="21" FontWeight="SemiBold" Foreground="#1B2733" Margin="0,0,0,6"/>
+                                <TextBlock x:Name="MainTextBox" TextWrapping="Wrap" FontSize="13.5" Foreground="#3D4B5C" LineHeight="21">
+                                    <Run Text="The Powerful Intune Bulk Actions Tool is here to help every Intune administrator to effectively manage endpoints by automating various reporting and administrative tasks."/>
+                                    <LineBreak/><LineBreak/>
 
-                        <Run FontWeight="Bold" Text="⚡ Actions Tab"/>
-                        <LineBreak/>
-                        <Run Text="Open the "/>
-                        <Run FontWeight="Bold" Text="Actions Tab"/>
-                        <Run Text=" to perform bulk administrative actions — such as importing or removing devices from groups, retiring devices, updating Autopilot group tags, renaming devices, removing Android apps, and deleting device records."/>
-                        <LineBreak/><LineBreak/>
+                                    <Run FontWeight="Bold" Text="📊 Reporting Tab"/>
+                                    <LineBreak/>
+                                    <Run Text="Open the "/>
+                                    <Run FontWeight="Bold" Text="Reporting Tab"/>
+                                    <Run Text=" to run device reports — including device info, BitLocker status, compliance, group membership, OS distribution, detected apps, and more. Results can be exported to CSV."/>
+                                    <LineBreak/><LineBreak/>
 
-                        <Run FontWeight="Bold" Text="📄 Session Logs"/>
-                        <LineBreak/>
-                        <Run Text="A log file is automatically created for every session under "/>
-                        <Run FontWeight="Bold" Text="C:\Temp\YYYYMMDD\"/>
-                        <Run Text=" with the naming convention "/>
-                        <Run FontWeight="Bold" Text="IntuneTool_YYYYMMDD_HHmmss.log"/>
-                        <Run Text="."/>
-                        <LineBreak/><LineBreak/>
+                                    <Run FontWeight="Bold" Text="⚡ Actions Tab"/>
+                                    <LineBreak/>
+                                    <Run Text="Open the "/>
+                                    <Run FontWeight="Bold" Text="Actions Tab"/>
+                                    <Run Text=" to perform bulk administrative actions — such as importing or removing devices from groups, retiring devices, updating Autopilot group tags, renaming devices, removing Android apps, and deleting device records."/>
+                                    <LineBreak/><LineBreak/>
 
-                        <Run FontWeight="Bold" Text="📋 Activity Log"/>
-                        <LineBreak/>
-                        <Run Text="The "/>
-                        <Run FontWeight="Bold" Text="Activity Log"/>
-                        <Run Text=" panel at the bottom of the window shows a live feed of all operations and events during your session. Click the panel header to expand or collapse it."/>
-                    </TextBlock>
+                                    <Run FontWeight="Bold" Text="📄 Session Logs"/>
+                                    <LineBreak/>
+                                    <Run Text="A log file is automatically created for every session under "/>
+                                    <Run FontWeight="Bold" Text="C:\Temp\YYYYMMDD\"/>
+                                    <Run Text=" with the naming convention "/>
+                                    <Run FontWeight="Bold" Text="IntuneTool_YYYYMMDD_HHmmss.log"/>
+                                    <Run Text="."/>
+                                    <LineBreak/><LineBreak/>
+
+                                    <Run FontWeight="Bold" Text="📋 Activity Log"/>
+                                    <LineBreak/>
+                                    <Run Text="The "/>
+                                    <Run FontWeight="Bold" Text="Activity Log"/>
+                                    <Run Text=" panel at the bottom of the window shows a live feed of all operations and events during your session. Click the panel header to expand or collapse it."/>
+                                </TextBlock>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
                 </Grid>
             </TabItem>
-            <TabItem x:Name="ReportingTab" HorizontalAlignment="Center" Height="20" Header="Reporting Tab" VerticalAlignment="Top" Width="86" Margin="0,-1,0,0">
-                <Grid Background="#FFE5E5E5">
+
+            <!-- ================================ REPORTING TAB ================================ -->
+            <TabItem x:Name="ReportingTab" Header="📊  Reporting">
+                <Grid Margin="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="150"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    
-                    <!-- Busy Overlay (covers entire tab) -->
-                    <Border x:Name="BusyOverlay" Grid.ColumnSpan="2" Grid.RowSpan="9" Background="#80000000" Visibility="Collapsed" Panel.ZIndex="100">
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                            <ProgressBar x:Name="BusyProgressBar" IsIndeterminate="True" Width="200" Height="20" Margin="0,0,0,10"/>
-                            <TextBlock x:Name="BusyStatusText" Text="Working..." FontSize="16" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center"/>
-                            <Button x:Name="ForceStopReportButton" Content="&#x26D4; Force Stop" Height="40" Width="140" Margin="0,15,0,0" FontSize="14" FontWeight="Bold" FontFamily="Bahnschrift" Background="#FFD32F2F" Foreground="White" HorizontalContentAlignment="Center" Cursor="Hand" ToolTip="Force stop the currently running operation"/>
+
+                    <!-- Left rail: Logo and Generate button -->
+                    <Border Style="{StaticResource Card}" Grid.Column="0" Padding="12" VerticalAlignment="Top">
+                        <StackPanel>
+                            <Image x:Name="MainImageCopy" Height="70" Width="70" Margin="0,4,0,14" Source="/MainImage.png" Stretch="Uniform" HorizontalAlignment="Center"/>
+                            <Button x:Name="GenerateReportButton" Style="{StaticResource AccentButton}" Content="Generate&#xD;&#xA;Report" Height="64" FontSize="15" ToolTip="Execute the selected report with the specified parameters"/>
                         </StackPanel>
                     </Border>
-                    
-                    <!-- Left Column: Image and Button -->
-                    <StackPanel Grid.Column="0" Grid.Row="0" Grid.RowSpan="9" VerticalAlignment="Top">
-                        <Image x:Name="MainImageCopy" Height="80" Width="80" Margin="10" Source="/MainImage.png" Stretch="Uniform" HorizontalAlignment="Center"/>
-                        <Button x:Name="GenerateReportButton" Content="Generate&#xD;&#xA;Report" Height="72" Width="96" Margin="10,5,10,10" FontSize="18" FontWeight="Bold" FontFamily="Bahnschrift" HorizontalContentAlignment="Center" HorizontalAlignment="Center" ToolTip="Execute the selected report with the specified parameters"/>
-                    </StackPanel>
-                    
-                    <!-- Right Column: Controls -->
-                    <StackPanel Grid.Column="1" Grid.Row="0" Orientation="Vertical" Margin="10,10,10,2">
+
+                    <!-- Right column: report parameters and results -->
+                    <Border Style="{StaticResource Card}" Grid.Column="1" Margin="16,0,0,0" Padding="16,12,16,16">
                         <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Label x:Name="SelectReport" Grid.Column="0" Content="Select Report:" FontSize="18" VerticalAlignment="Center"/>
-                            <ComboBox x:Name="ReportType" Grid.Column="1" FontSize="18" VerticalAlignment="Center" Margin="10,0,0,0" HorizontalAlignment="Stretch"/>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0" Orientation="Vertical">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Label x:Name="SelectReport" Grid.Column="0" Content="Select Report:" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="ReportType" Grid.Column="1" VerticalAlignment="Center" Margin="12,0,0,0" HorizontalAlignment="Stretch"/>
+                                </Grid>
+                                <TextBlock x:Name="ReportDescriptionLabel" Text="" FontSize="12" Foreground="#5B6B7B" TextWrapping="Wrap" Margin="2,6,0,0" FontStyle="Italic" Visibility="Collapsed"/>
+                            </StackPanel>
+
+                            <Grid x:Name="Row1ReportingPanel" Grid.Row="1" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Label x:Name="SelectSingleOrMultiple" Grid.Column="0" Content="Report for single device or multiple devices?" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="SingleOrMultipleDevices" Grid.Column="1" VerticalAlignment="Center" Margin="12,0,0,0" HorizontalAlignment="Stretch"/>
+                            </Grid>
+
+                            <Grid x:Name="Row2ReportingPanel" Grid.Row="2" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="2*"/>
+                                </Grid.ColumnDefinitions>
+                                <Label x:Name="SingleDevice" Grid.Column="0" Content="Single device (enter info):" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="SingleDeviceInfoChoice" Grid.Column="1" VerticalAlignment="Center" Margin="12,0,12,0" HorizontalAlignment="Stretch"/>
+                                <TextBox x:Name="SingleDeviceInfoBox" Grid.Column="2" Height="32" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
+                            </Grid>
+
+                            <Grid x:Name="Row3ReportingPanel" Grid.Row="3" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="2*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Label x:Name="MultipleDevices" Grid.Column="0" Grid.Row="0" Content="Multiple devices:&#xD;&#xA;(select a .txt/.csv&#xD;&#xA;file or paste IDs&#xD;&#xA;below)" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="MultipleDevicesInfoChoice" Grid.Column="1" Grid.Row="0" VerticalAlignment="Center" Margin="12,0,12,0" HorizontalAlignment="Stretch"/>
+                                <TextBox x:Name="MultipleDevicesInfoBox" Grid.Column="2" Grid.Row="0" Height="32" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
+                                <TextBlock x:Name="DeviceCountLabel" Grid.Column="3" Grid.Row="0" Text="" FontSize="13" Foreground="#0F6CBD" VerticalAlignment="Center" Margin="10,0,0,0" FontWeight="SemiBold"/>
+                                <Label Grid.Column="0" Grid.Row="1" Content="Or paste IDs here&#xD;&#xA;(one per line):" FontSize="12" Foreground="#5B6B7B" VerticalAlignment="Top" Margin="0,8,0,0"/>
+                                <TextBox x:Name="PastedDevicesTextBox" Grid.Column="1" Grid.Row="1" Grid.ColumnSpan="3" Height="80" FontSize="13" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap" VerticalContentAlignment="Stretch" Text="" VerticalAlignment="Top" HorizontalAlignment="Stretch" Margin="12,8,0,0" ToolTip="Paste device IDs here, one per line. If a file is also selected above, the file takes priority."/>
+                            </Grid>
+
+                            <Grid x:Name="Row4ReportingPanel" Grid.Row="4" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Label x:Name="GroupInputLabelReporting" Grid.Column="0" Content="Group (Name or Object ID):" VerticalAlignment="Center"/>
+                                <TextBox x:Name="GroupInputBoxReporting" Grid.Column="1" Height="32" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="12,0,0,0"/>
+                            </Grid>
+
+                            <Grid x:Name="Row5ReportingPanel" Grid.Row="5" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Label x:Name="PolicyIDLabel" Grid.Column="0" Content="Policy ID (GUID):" VerticalAlignment="Center"/>
+                                <TextBox x:Name="PolicyIDBox" Grid.Column="1" Height="32" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="12,0,0,0"/>
+                            </Grid>
+
+                            <Label x:Name="PostRequestNote" Grid.Row="5" Content="ℹ️ Note: This report uses a POST request to fetch data (read-only, no changes made)." FontSize="12" Foreground="#0F6CBD" Visibility="Collapsed" Margin="0,48,0,0" VerticalAlignment="Top"/>
+
+                            <Grid x:Name="Row6ReportingPanel" Grid.Row="6" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Label x:Name="PlatformSelectLabel" Grid.Column="0" Content="Select Platform:" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="PlatformSelectCombo" Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="12,0,0,0">
+                                    <ComboBoxItem Content="Windows"/>
+                                    <ComboBoxItem Content="Android"/>
+                                    <ComboBoxItem Content="iOS"/>
+                                    <ComboBoxItem Content="macOS"/>
+                                </ComboBox>
+                            </Grid>
+
+                            <Grid x:Name="Row7ReportingPanel" Grid.Row="7" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Label x:Name="AppSelectLabel" Grid.Column="0" Content="Select App:" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="AppSelectCombo" Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="12,0,0,0"/>
+                            </Grid>
+
+                            <Grid Grid.Row="8" Margin="0,12,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <ListView x:Name="listview" Grid.Row="0" Visibility="Collapsed"/>
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+                                    <Button x:Name="CopyReportButton" Content="📋 Copy" Width="90" Height="32" Margin="0,0,10,0" Visibility="Collapsed" ToolTip="Copy results to clipboard as tab-separated text"/>
+                                    <Button x:Name="ExportReportButton" Content="Export to CSV" Width="120" Height="32" Visibility="Collapsed" ToolTip="Export results to a CSV file for use in Excel"/>
+                                </StackPanel>
+                            </Grid>
+                            <TextBox x:Name="ResultsTextBox" Grid.Row="8" Margin="0,12,0,0" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" IsReadOnly="True" VerticalContentAlignment="Stretch" FontFamily="Consolas" FontSize="12" Visibility="Collapsed"/>
                         </Grid>
-                        <TextBlock x:Name="ReportDescriptionLabel" Text="" FontSize="13" Foreground="#FF0066CC" TextWrapping="Wrap" Margin="5,2,10,0" FontStyle="Italic" Visibility="Collapsed"/>
-                    </StackPanel>
-                    
-                    <Grid x:Name="Row1ReportingPanel" Grid.Column="1" Grid.Row="1" Margin="10,2,10,2" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Label x:Name="SelectSingleOrMultiple" Grid.Column="0" Content="Report for single device or multiple devices?" FontSize="18" VerticalAlignment="Center"/>
-                        <ComboBox x:Name="SingleOrMultipleDevices" Grid.Column="1" FontSize="18" VerticalAlignment="Center" Margin="10,0,0,0" HorizontalAlignment="Stretch"/>
-                    </Grid>
-                    
-                    <Grid x:Name="Row2ReportingPanel" Grid.Column="1" Grid.Row="2" Margin="10,2,10,2" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="220"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="2*"/>
-                        </Grid.ColumnDefinitions>
-                        <Label x:Name="SingleDevice" Grid.Column="0" Content="Single device (enter info):" FontSize="18" VerticalAlignment="Center"/>
-                        <ComboBox x:Name="SingleDeviceInfoChoice" Grid.Column="1" FontSize="18" VerticalAlignment="Center" Margin="10,0,10,0" HorizontalAlignment="Stretch"/>
-                        <TextBox x:Name="SingleDeviceInfoBox" Grid.Column="2" Height="30" FontSize="18" TextWrapping="Wrap" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                    </Grid>
-                    
-                    <Grid x:Name="Row3ReportingPanel" Grid.Column="1" Grid.Row="3" Margin="10,2,10,2" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="220"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="2*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <Label x:Name="MultipleDevices" Grid.Column="0" Grid.Row="0" Content="Multiple devices:&#xD;&#xA;(select a .txt/.csv&#xD;&#xA;file or paste IDs&#xD;&#xA;below)" FontSize="18" VerticalAlignment="Center"/>
-                        <ComboBox x:Name="MultipleDevicesInfoChoice" Grid.Column="1" Grid.Row="0" FontSize="18" VerticalAlignment="Center" Margin="10,0,10,0" HorizontalAlignment="Stretch"/>
-                        <TextBox x:Name="MultipleDevicesInfoBox" Grid.Column="2" Grid.Row="0" Height="30" FontSize="18" TextWrapping="Wrap" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                        <TextBlock x:Name="DeviceCountLabel" Grid.Column="3" Grid.Row="0" Text="" FontSize="14" Foreground="#FF2196F3" VerticalAlignment="Center" Margin="10,0,0,0" FontWeight="Bold"/>
-                        <Label Grid.Column="0" Grid.Row="1" Content="Or paste IDs here&#xD;&#xA;(one per line):" FontSize="14" VerticalAlignment="Top" Margin="0,5,0,0"/>
-                        <TextBox x:Name="PastedDevicesTextBox" Grid.Column="1" Grid.Row="1" Grid.ColumnSpan="3" Height="80" FontSize="14" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap" Text="" VerticalAlignment="Top" HorizontalAlignment="Stretch" Margin="10,5,0,5" ToolTip="Paste device IDs here, one per line. If a file is also selected above, the file takes priority."/>
-                    </Grid>
-                    
-                    <Grid x:Name="Row4ReportingPanel" Grid.Column="1" Grid.Row="4" Margin="10,2,10,2" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Label x:Name="GroupInputLabelReporting" Grid.Column="0" Content="Group (Name or Object ID):" FontSize="18" VerticalAlignment="Center"/>
-                        <TextBox x:Name="GroupInputBoxReporting" Grid.Column="1" Height="30" FontSize="18" TextWrapping="Wrap" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                    </Grid>
-                    
-                    <Grid x:Name="Row5ReportingPanel" Grid.Column="1" Grid.Row="5" Margin="10,2,10,2" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="220"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Label x:Name="PolicyIDLabel" Grid.Column="0" Content="Policy ID (GUID):" FontSize="18" VerticalAlignment="Center"/>
-                        <TextBox x:Name="PolicyIDBox" Grid.Column="1" Height="30" FontSize="18" TextWrapping="Wrap" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                    </Grid>
-                    
-                    <Label x:Name="PostRequestNote" Grid.Column="1" Grid.Row="5" Content="ℹ️ Note: This report uses a POST request to fetch data (read-only, no changes made)." FontSize="12" Foreground="#FF0066CC" Visibility="Collapsed" Margin="10,35,10,0" VerticalAlignment="Top"/>
-                    
-                    <Grid x:Name="Row6ReportingPanel" Grid.Column="1" Grid.Row="6" Margin="10,2,10,2" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="220"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Label x:Name="PlatformSelectLabel" Grid.Column="0" Content="Select Platform:" FontSize="18" VerticalAlignment="Center"/>
-                        <ComboBox x:Name="PlatformSelectCombo" Grid.Column="1" FontSize="18" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="10,0,0,0">
-                            <ComboBoxItem Content="Windows"/>
-                            <ComboBoxItem Content="Android"/>
-                            <ComboBoxItem Content="iOS"/>
-                            <ComboBoxItem Content="macOS"/>
-                        </ComboBox>
-                    </Grid>
-                    
-                    <Grid x:Name="Row7ReportingPanel" Grid.Column="1" Grid.Row="7" Margin="10,2,10,2" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="220"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Label x:Name="AppSelectLabel" Grid.Column="0" Content="Select App:" FontSize="18" VerticalAlignment="Center"/>
-                        <ComboBox x:Name="AppSelectCombo" Grid.Column="1" FontSize="18" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="10,0,0,0"/>
-                    </Grid>
-                    
-                    <Grid Grid.Column="1" Grid.Row="8" Margin="10">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <ListView x:Name="listview" Grid.Row="0" d:ItemsSource="{d:SampleData ItemCount=5}" Visibility="Collapsed">
-                            <ListView.View>
-                                <GridView>
-                                    <GridViewColumn/>
-                                </GridView>
-                            </ListView.View>
-                        </ListView>
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,5,0,0">
-                            <Button x:Name="CopyReportButton" Content="📋 Copy" Width="80" Height="30" FontSize="14" FontWeight="Bold" Margin="0,0,10,0" Visibility="Collapsed" ToolTip="Copy results to clipboard as tab-separated text"/>
-                            <Button x:Name="ExportReportButton" Content="Export to CSV" Width="120" Height="30" FontSize="14" FontWeight="Bold" Visibility="Collapsed" ToolTip="Export results to a CSV file for use in Excel"/>
-                        </StackPanel>
-                    </Grid>
-                    <TextBox x:Name="ResultsTextBox" Grid.Column="1" Grid.Row="8" Margin="10" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" IsReadOnly="True" FontFamily="Consolas" FontSize="12" Visibility="Collapsed"/>
+                    </Border>
+
+                    <!-- Busy Overlay (covers entire tab) -->
+                    <Border x:Name="BusyOverlay" Grid.ColumnSpan="2" Margin="-16" Background="#8C1B2430" Visibility="Collapsed" Panel.ZIndex="100">
+                        <Border Background="#FFFFFF" CornerRadius="10" Padding="30,26" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <StackPanel>
+                                <ProgressBar x:Name="BusyProgressBar" IsIndeterminate="True" Width="250" Height="6" Foreground="#0078D4" Background="#E4E9EF" BorderThickness="0"/>
+                                <TextBlock x:Name="BusyStatusText" Text="Working..." FontSize="14" Foreground="#1F2937" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,16,0,0" MaxWidth="320" TextWrapping="Wrap" TextAlignment="Center"/>
+                                <Button x:Name="ForceStopReportButton" Style="{StaticResource DangerButton}" Content="&#x26D4; Force Stop" Height="36" Width="140" Margin="0,18,0,0" HorizontalAlignment="Center" ToolTip="Force stop the currently running operation"/>
+                            </StackPanel>
+                        </Border>
+                    </Border>
                 </Grid>
             </TabItem>
-            <TabItem HorizontalAlignment="Center" Height="20" Header="Actions Tab" VerticalAlignment="Top" Width="81" Margin="0,-1,0,0">
-                <Grid Background="#FFE5E5E5">
+
+            <!-- ================================ ACTIONS TAB ================================ -->
+            <TabItem Header="⚡  Actions">
+                <Grid Margin="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="150"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    
-                    <!-- Busy Overlay (covers entire tab) -->
-                    <Border x:Name="BusyOverlayAction" Grid.ColumnSpan="2" Grid.RowSpan="9" Background="#80000000" Visibility="Collapsed" Panel.ZIndex="100">
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                            <ProgressBar x:Name="BusyProgressBarAction" IsIndeterminate="True" Width="200" Height="20" Margin="0,0,0,10"/>
-                            <TextBlock x:Name="BusyStatusTextAction" Text="Working..." FontSize="16" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center"/>
-                            <Button x:Name="ForceStopActionButton" Content="&#x26D4; Force Stop" Height="40" Width="140" Margin="0,15,0,0" FontSize="14" FontWeight="Bold" FontFamily="Bahnschrift" Background="#FFD32F2F" Foreground="White" HorizontalContentAlignment="Center" Cursor="Hand" ToolTip="Force stop the currently running operation"/>
+
+                    <!-- Left rail: Logo and Perform button -->
+                    <Border Style="{StaticResource Card}" Grid.Column="0" Padding="12" VerticalAlignment="Top">
+                        <StackPanel>
+                            <Image x:Name="MainImageCopy1" Height="70" Width="70" Margin="0,4,0,14" Source="/MainImage.png" Stretch="Uniform" HorizontalAlignment="Center"/>
+                            <Button x:Name="PerformActionButton" Style="{StaticResource AccentButton}" Content="Perform&#xD;&#xA;Action" Height="64" FontSize="15" ToolTip="Execute the selected action with the specified parameters"/>
                         </StackPanel>
                     </Border>
-                    
-                    <!-- Left Column: Image and Button -->
-                    <StackPanel Grid.Column="0" Grid.Row="0" Grid.RowSpan="9" VerticalAlignment="Top">
-                        <Image x:Name="MainImageCopy1" Height="80" Width="80" Margin="10" Source="/MainImage.png" Stretch="Uniform" HorizontalAlignment="Center"/>
-                        <Button x:Name="PerformActionButton" Content="Perform&#xD;&#xA;Action" Height="72" Width="96" Margin="10,5,10,10" FontSize="18" FontWeight="Bold" FontFamily="Bahnschrift" HorizontalContentAlignment="Center" HorizontalAlignment="Center" ToolTip="Execute the selected action with the specified parameters"/>
-                    </StackPanel>
-                    
-                    <!-- Right Column: Controls -->
-                    <StackPanel Grid.Column="1" Grid.Row="0" Orientation="Vertical" Margin="10,10,10,2">
+
+                    <!-- Right column: action parameters and results -->
+                    <Border Style="{StaticResource Card}" Grid.Column="1" Margin="16,0,0,0" Padding="16,12,16,16">
                         <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Label x:Name="SelectAction" Grid.Column="0" Content="Select Action:" FontSize="18" VerticalAlignment="Center"/>
-                            <ComboBox x:Name="ActionType" Grid.Column="1" FontSize="18" VerticalAlignment="Center" Margin="10,0,0,0" HorizontalAlignment="Stretch"/>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0" Orientation="Vertical">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Label x:Name="SelectAction" Grid.Column="0" Content="Select Action:" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="ActionType" Grid.Column="1" VerticalAlignment="Center" Margin="12,0,0,0" HorizontalAlignment="Stretch"/>
+                                </Grid>
+                                <TextBlock x:Name="ActionDescriptionLabel" Text="" FontSize="12" Foreground="#5B6B7B" TextWrapping="Wrap" Margin="2,6,0,0" FontStyle="Italic" Visibility="Collapsed"/>
+                            </StackPanel>
+
+                            <Grid x:Name="Row1ActionPanel" Grid.Row="1" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Label x:Name="SelectSingleOrMultipleAction" Grid.Column="0" Content="Action for single device or multiple devices?" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="SingleOrMultipleDevicesAction" Grid.Column="1" VerticalAlignment="Center" Margin="12,0,0,0" HorizontalAlignment="Stretch"/>
+                            </Grid>
+
+                            <Grid x:Name="Row2ActionPanel" Grid.Row="2" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="2*"/>
+                                </Grid.ColumnDefinitions>
+                                <Label x:Name="SingleDeviceAction" Grid.Column="0" Content="Single device (enter info):" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="SingleDeviceInfoChoiceAction" Grid.Column="1" VerticalAlignment="Center" Margin="12,0,12,0" HorizontalAlignment="Stretch"/>
+                                <TextBox x:Name="SingleDeviceInfoBoxAction" Grid.Column="2" Height="32" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
+                            </Grid>
+
+                            <Grid x:Name="Row3ActionPanel" Grid.Row="3" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="2*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Label x:Name="MultipleDevicesAction" Grid.Column="0" Grid.Row="0" Content="Multiple devices:&#xA;(select a .txt or .csv&#xA;file with one ID per line&#xA;or paste IDs below)" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="MultipleDevicesInfoChoiceAction" Grid.Column="1" Grid.Row="0" VerticalAlignment="Center" Margin="12,0,12,0" HorizontalAlignment="Stretch"/>
+                                <TextBox x:Name="MultipleDevicesInfoBoxAction" Grid.Column="2" Grid.Row="0" Height="32" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
+                                <TextBlock x:Name="DeviceCountLabelAction" Grid.Column="3" Grid.Row="0" Text="" FontSize="13" Foreground="#0F6CBD" VerticalAlignment="Center" Margin="10,0,0,0" FontWeight="SemiBold"/>
+                                <Label Grid.Column="0" Grid.Row="1" Content="Or paste IDs here&#xA;(one per line):" FontSize="12" Foreground="#5B6B7B" VerticalAlignment="Top" Margin="0,8,0,0"/>
+                                <TextBox x:Name="PastedDevicesTextBoxAction" Grid.Column="1" Grid.Row="1" Grid.ColumnSpan="3" Height="80" FontSize="13" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap" VerticalContentAlignment="Stretch" Text="" VerticalAlignment="Top" HorizontalAlignment="Stretch" Margin="12,8,0,0" ToolTip="Paste device IDs here, one per line. If a file is also selected above, the file takes priority."/>
+                            </Grid>
+
+                            <Grid x:Name="Row4ActionPanel" Grid.Row="4" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Label x:Name="GroupInputLabel" Grid.Column="0" Content="Group (Name or Object ID):" VerticalAlignment="Center"/>
+                                <TextBox x:Name="GroupInputBox" Grid.Column="1" Height="32" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="12,0,0,0"/>
+                            </Grid>
+
+                            <Grid x:Name="Row5ActionPanel" Grid.Row="5" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Label x:Name="GroupTagLabel" Grid.Column="0" Content="New Group Tag:" VerticalAlignment="Center"/>
+                                <TextBox x:Name="GroupTagBox" Grid.Column="1" Height="32" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="12,0,0,0"/>
+                            </Grid>
+
+                            <Grid x:Name="RenameOptionsPanel" Grid.Row="6" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" MinWidth="60"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto" MinWidth="90"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Label Grid.Column="0" Content="Prefix:" VerticalAlignment="Center"/>
+                                <TextBox x:Name="RenamePrefixBox" Grid.Column="1" Height="32" Text="" VerticalAlignment="Center" Margin="12,0,12,0" HorizontalAlignment="Stretch"/>
+                                <Label x:Name="RenamePlatformLabel" Grid.Column="2" Content="Platform:" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="RenamePlatformCombo" Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="12,0,0,0">
+                                    <ComboBoxItem Content="All"/>
+                                    <ComboBoxItem Content="Windows"/>
+                                    <ComboBoxItem Content="Android"/>
+                                    <ComboBoxItem Content="iOS"/>
+                                    <ComboBoxItem Content="macOS"/>
+                                </ComboBox>
+                            </Grid>
+
+                            <Grid x:Name="RowAppSelectionPanel" Grid.Row="7" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Label x:Name="AndroidAppLabel" Grid.Column="0" Content="Select Android App:" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="AndroidAppCombo" Grid.Column="1" VerticalAlignment="Center" Margin="12,0,0,0" HorizontalAlignment="Stretch"/>
+                            </Grid>
+
+                            <Grid x:Name="RowDeleteOptionsPanel" Grid.Row="4" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,4,0,6">
+                                    <Label Content="Delete from:" FontWeight="Bold" Foreground="#B3261E" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                    <CheckBox x:Name="DeleteIntuneCheckbox" Content="Intune" VerticalAlignment="Center" Margin="0,0,16,0" IsChecked="True"/>
+                                    <CheckBox x:Name="DeleteAutopilotCheckbox" Content="Autopilot" VerticalAlignment="Center" Margin="0,0,16,0" IsChecked="True"/>
+                                    <CheckBox x:Name="DeleteEntraCheckbox" Content="Entra ID" VerticalAlignment="Center" Margin="0,0,20,0" IsChecked="True"/>
+                                    <Border BorderBrush="#C8E6C9" Background="#F1F8F2" BorderThickness="1" CornerRadius="6" Padding="10,4">
+                                        <CheckBox x:Name="WhatIfModeCheckbox" Content="WhatIf Mode (Dry Run - No actual deletion)" FontWeight="SemiBold" Foreground="#137333" VerticalAlignment="Center" IsChecked="True"/>
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock Grid.Row="1" Text="⚠️ WARNING: This action PERMANENTLY DELETES device records and CANNOT be undone! Keep 'WhatIf Mode' checked to preview changes first."
+                                           FontSize="12" Foreground="#B3261E" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                            </Grid>
+
+                            <Grid Grid.Row="8" Margin="0,12,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <ListView x:Name="listviewAction" Grid.Row="0" Visibility="Collapsed"/>
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+                                    <Button x:Name="CopyActionButton" Content="📋 Copy" Width="90" Height="32" Margin="0,0,10,0" Visibility="Collapsed" ToolTip="Copy results to clipboard as tab-separated text"/>
+                                    <Button x:Name="ExportActionButton" Content="Export to CSV" Width="120" Height="32" Visibility="Collapsed" ToolTip="Export results to a CSV file for use in Excel"/>
+                                </StackPanel>
+                            </Grid>
                         </Grid>
-                        <TextBlock x:Name="ActionDescriptionLabel" Text="" FontSize="13" Foreground="#FF0066CC" TextWrapping="Wrap" Margin="5,2,10,0" FontStyle="Italic" Visibility="Collapsed"/>
-                    </StackPanel>
-                    
-                    <Grid x:Name="Row1ActionPanel" Grid.Column="1" Grid.Row="1" Margin="10,2,10,2" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Label x:Name="SelectSingleOrMultipleAction" Grid.Column="0" Content="Action for single device or multiple devices?" FontSize="18" VerticalAlignment="Center"/>
-                        <ComboBox x:Name="SingleOrMultipleDevicesAction" Grid.Column="1" FontSize="18" VerticalAlignment="Center" Margin="10,0,0,0" HorizontalAlignment="Stretch"/>
-                    </Grid>
-                    
-                    <Grid x:Name="Row2ActionPanel" Grid.Column="1" Grid.Row="2" Margin="10,2,10,2" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="220"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="2*"/>
-                        </Grid.ColumnDefinitions>
-                        <Label x:Name="SingleDeviceAction" Grid.Column="0" Content="Single device (enter info):" FontSize="18" VerticalAlignment="Center"/>
-                        <ComboBox x:Name="SingleDeviceInfoChoiceAction" Grid.Column="1" FontSize="18" VerticalAlignment="Center" Margin="10,0,10,0" HorizontalAlignment="Stretch"/>
-                        <TextBox x:Name="SingleDeviceInfoBoxAction" Grid.Column="2" Height="30" FontSize="18" TextWrapping="Wrap" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                    </Grid>
-                    
-                    <Grid x:Name="Row3ActionPanel" Grid.Column="1" Grid.Row="3" Margin="10,2,10,2" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="220"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="2*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <Label x:Name="MultipleDevicesAction" Grid.Column="0" Grid.Row="0" Content="Multiple devices:&#xA;(select a .txt or .csv&#xA;file with one ID per line&#xA;or paste IDs below)" FontSize="18" VerticalAlignment="Center"/>
-                        <ComboBox x:Name="MultipleDevicesInfoChoiceAction" Grid.Column="1" Grid.Row="0" FontSize="18" VerticalAlignment="Center" Margin="10,0,10,0" HorizontalAlignment="Stretch"/>
-                        <TextBox x:Name="MultipleDevicesInfoBoxAction" Grid.Column="2" Grid.Row="0" Height="30" FontSize="18" TextWrapping="Wrap" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                        <TextBlock x:Name="DeviceCountLabelAction" Grid.Column="3" Grid.Row="0" Text="" FontSize="14" Foreground="#FF2196F3" VerticalAlignment="Center" Margin="10,0,0,0" FontWeight="Bold"/>
-                        <Label Grid.Column="0" Grid.Row="1" Content="Or paste IDs here&#xA;(one per line):" FontSize="14" VerticalAlignment="Top" Margin="0,5,0,0"/>
-                        <TextBox x:Name="PastedDevicesTextBoxAction" Grid.Column="1" Grid.Row="1" Grid.ColumnSpan="3" Height="80" FontSize="14" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap" Text="" VerticalAlignment="Top" HorizontalAlignment="Stretch" Margin="10,5,0,5" ToolTip="Paste device IDs here, one per line. If a file is also selected above, the file takes priority."/>
-                    </Grid>
-                    
-                    <Grid x:Name="Row4ActionPanel" Grid.Column="1" Grid.Row="4" Margin="10,2,10,2" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Label x:Name="GroupInputLabel" Grid.Column="0" Content="Group (Name or Object ID):" FontSize="18" VerticalAlignment="Center"/>
-                        <TextBox x:Name="GroupInputBox" Grid.Column="1" Height="30" FontSize="18" TextWrapping="Wrap" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                    </Grid>
-                    
-                    <Grid x:Name="Row5ActionPanel" Grid.Column="1" Grid.Row="5" Margin="10,2,10,2" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="220"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Label x:Name="GroupTagLabel" Grid.Column="0" Content="New Group Tag:" FontSize="18" VerticalAlignment="Center"/>
-                        <TextBox x:Name="GroupTagBox" Grid.Column="1" Height="30" FontSize="18" TextWrapping="Wrap" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                    </Grid>
+                    </Border>
 
-                    <Grid x:Name="RenameOptionsPanel" Grid.Column="1" Grid.Row="6" Margin="10,2,10,2" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                             <ColumnDefinition Width="Auto" MinWidth="60"/>
-                             <ColumnDefinition Width="*" />
-                             <ColumnDefinition Width="Auto" MinWidth="90"/>
-                             <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Label Grid.Column="0" Content="Prefix:" FontSize="18" VerticalAlignment="Center"/>
-                        <TextBox x:Name="RenamePrefixBox" Grid.Column="1" Height="30" FontSize="18" Text="" VerticalAlignment="Center" Margin="0,0,10,0" HorizontalAlignment="Stretch"/>
-                        <Label x:Name="RenamePlatformLabel" Grid.Column="2" Content="Platform:" FontSize="18" VerticalAlignment="Center"/>
-                        <ComboBox x:Name="RenamePlatformCombo" Grid.Column="3" FontSize="18" VerticalAlignment="Center" HorizontalAlignment="Stretch">
-                            <ComboBoxItem Content="All"/>
-                            <ComboBoxItem Content="Windows"/>
-                            <ComboBoxItem Content="Android"/>
-                            <ComboBoxItem Content="iOS"/>
-                            <ComboBoxItem Content="macOS"/>
-                        </ComboBox>
-                    </Grid>
-
-                    <Grid x:Name="RowAppSelectionPanel" Grid.Column="1" Grid.Row="7" Margin="10,2,10,2" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="220"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Label x:Name="AndroidAppLabel" Grid.Column="0" Content="Select Android App:" FontSize="18" VerticalAlignment="Center"/>
-                        <ComboBox x:Name="AndroidAppCombo" Grid.Column="1" FontSize="18" VerticalAlignment="Center" Margin="10,0,0,0" HorizontalAlignment="Stretch"/>
-                    </Grid>
-
-                    <Grid x:Name="RowDeleteOptionsPanel" Grid.Column="1" Grid.Row="4" Margin="10,2,10,2" Visibility="Collapsed">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,5,0,5">
-                            <Label Content="Delete from:" FontSize="16" FontWeight="Bold" Foreground="#FF8B0000" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <CheckBox x:Name="DeleteIntuneCheckbox" Content="Intune" FontSize="14" VerticalAlignment="Center" Margin="0,0,15,0" IsChecked="True"/>
-                            <CheckBox x:Name="DeleteAutopilotCheckbox" Content="Autopilot" FontSize="14" VerticalAlignment="Center" Margin="0,0,15,0" IsChecked="True"/>
-                            <CheckBox x:Name="DeleteEntraCheckbox" Content="Entra ID" FontSize="14" VerticalAlignment="Center" Margin="0,0,20,0" IsChecked="True"/>
-                            <Border BorderBrush="#FF8B0000" BorderThickness="1" CornerRadius="3" Padding="5,2">
-                                <CheckBox x:Name="WhatIfModeCheckbox" Content="WhatIf Mode (Dry Run - No actual deletion)" FontSize="14" FontWeight="Bold" Foreground="#FF006400" VerticalAlignment="Center" IsChecked="True"/>
-                            </Border>
-                        </StackPanel>
-                        <TextBlock Grid.Row="1" Text="⚠️ WARNING: This action PERMANENTLY DELETES device records and CANNOT be undone! Keep 'WhatIf Mode' checked to preview changes first." 
-                                   FontSize="12" Foreground="#FF8B0000" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,0,0,5"/>
-                    </Grid>
-                    
-                    <Grid Grid.Column="1" Grid.Row="8" Margin="10">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <ListView x:Name="listviewAction" Grid.Row="0" Visibility="Collapsed">
-                            <ListView.View>
-                                <GridView>
-                                    <GridViewColumn/>
-                                </GridView>
-                            </ListView.View>
-                        </ListView>
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,5,0,0">
-                            <Button x:Name="CopyActionButton" Content="📋 Copy" Width="80" Height="30" FontSize="14" FontWeight="Bold" Margin="0,0,10,0" Visibility="Collapsed" ToolTip="Copy results to clipboard as tab-separated text"/>
-                            <Button x:Name="ExportActionButton" Content="Export to CSV" Width="120" Height="30" FontSize="14" FontWeight="Bold" Visibility="Collapsed" ToolTip="Export results to a CSV file for use in Excel"/>
-                        </StackPanel>
-                    </Grid>
+                    <!-- Busy Overlay (covers entire tab) -->
+                    <Border x:Name="BusyOverlayAction" Grid.ColumnSpan="2" Margin="-16" Background="#8C1B2430" Visibility="Collapsed" Panel.ZIndex="100">
+                        <Border Background="#FFFFFF" CornerRadius="10" Padding="30,26" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <StackPanel>
+                                <ProgressBar x:Name="BusyProgressBarAction" IsIndeterminate="True" Width="250" Height="6" Foreground="#0078D4" Background="#E4E9EF" BorderThickness="0"/>
+                                <TextBlock x:Name="BusyStatusTextAction" Text="Working..." FontSize="14" Foreground="#1F2937" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,16,0,0" MaxWidth="320" TextWrapping="Wrap" TextAlignment="Center"/>
+                                <Button x:Name="ForceStopActionButton" Style="{StaticResource DangerButton}" Content="&#x26D4; Force Stop" Height="36" Width="140" Margin="0,18,0,0" HorizontalAlignment="Center" ToolTip="Force stop the currently running operation"/>
+                            </StackPanel>
+                        </Border>
+                    </Border>
                 </Grid>
             </TabItem>
         </TabControl>
 
-        <Expander x:Name="ActivityLogExpander" Grid.Row="1" Grid.ColumnSpan="6" Header="Activity Log" Margin="4,0,4,4" IsExpanded="False">
-            <ListView x:Name="LvActivityLog" Height="150" MaxHeight="200" VirtualizingPanel.IsVirtualizing="True">
+        <!-- ================================ ACTIVITY LOG ================================ -->
+        <Expander x:Name="ActivityLogExpander" Grid.Row="1" Header="📋  Activity Log" Margin="16,10,16,14" IsExpanded="False">
+            <ListView x:Name="LvActivityLog" Height="160" MaxHeight="220" VirtualizingPanel.IsVirtualizing="True">
                 <ListView.View>
                     <GridView>
                         <GridViewColumn Header="Time" DisplayMemberBinding="{Binding Time}" Width="165"/>
-                        <GridViewColumn Header="Level" DisplayMemberBinding="{Binding Level}" Width="65"/>
-                        <GridViewColumn Header="Message" DisplayMemberBinding="{Binding Message}" Width="750"/>
+                        <GridViewColumn Header="Level" Width="80">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Level}" FontWeight="SemiBold">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="#5B6B7B"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Level}" Value="ERROR">
+                                                        <Setter Property="Foreground" Value="#C5221F"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Level}" Value="WARNING">
+                                                        <Setter Property="Foreground" Value="#B26A00"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Level}" Value="INFO">
+                                                        <Setter Property="Foreground" Value="#0F6CBD"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Level}" Value="USER">
+                                                        <Setter Property="Foreground" Value="#137333"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="Message" DisplayMemberBinding="{Binding Message}" Width="760"/>
                     </GridView>
                 </ListView.View>
             </ListView>
