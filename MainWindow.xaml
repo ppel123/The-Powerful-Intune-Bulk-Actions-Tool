@@ -141,9 +141,9 @@
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 SnapsToDevicePixels="True">
-                            <ScrollViewer Name="PART_ContentHost"
-                                          Margin="{TemplateBinding Padding}"
-                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                            <!-- TextBox applies the control's Padding to the content host internally,
+                                 so no Margin here (a Margin would double the inset and clip the text) -->
+                            <ScrollViewer Name="PART_ContentHost" Focusable="False"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -531,7 +531,7 @@
                     <Border Style="{StaticResource Card}" Grid.Column="0" Padding="18">
                         <StackPanel>
                             <Image x:Name="MainImage" Height="110" Width="110" Source="/MainImage.png" Stretch="Uniform" HorizontalAlignment="Center" Margin="0,8,0,0"/>
-                            <Button x:Name="SignInButtonCopy" Style="{StaticResource AccentButton}" Content="Sign In — Start Here" Height="42" Margin="0,24,0,10" FontSize="14" ToolTip="Connect to Microsoft Graph with your credentials to access Intune data"/>
+                            <Button x:Name="SignInButtonCopy" Style="{StaticResource AccentButton}" Content="Sign In - Start Here" Height="42" Margin="0,24,0,10" FontSize="14" ToolTip="Connect to Microsoft Graph with your credentials to access Intune data"/>
                             <Button x:Name="DisconnectBtn" Content="Disconnect" Height="36" Margin="0,0,0,22" FontSize="13" ToolTip="Disconnect from Microsoft Graph and clear session"/>
                             <Label x:Name="NotConnectedLabel" Style="{StaticResource StatusBadge}" Content="●  Not Connected" Background="#FDECEA" BorderBrush="#F5C6C0" Foreground="#C5221F"/>
                             <StackPanel x:Name="ConnectedPanel" Visibility="Collapsed" HorizontalAlignment="Center">
@@ -554,14 +554,14 @@
                                     <LineBreak/>
                                     <Run Text="Open the "/>
                                     <Run FontWeight="Bold" Text="Reporting Tab"/>
-                                    <Run Text=" to run device reports — including device info, BitLocker status, compliance, group membership, OS distribution, detected apps, and more. Results can be exported to CSV."/>
+                                    <Run Text=" to run device reports - including device info, BitLocker status, compliance, group membership, OS distribution, detected apps, and more. Results can be exported to CSV."/>
                                     <LineBreak/><LineBreak/>
 
                                     <Run FontWeight="Bold" Text="⚡ Actions Tab"/>
                                     <LineBreak/>
                                     <Run Text="Open the "/>
                                     <Run FontWeight="Bold" Text="Actions Tab"/>
-                                    <Run Text=" to perform bulk administrative actions — such as importing or removing devices from groups, retiring devices, updating Autopilot group tags, renaming devices, removing Android apps, and deleting device records."/>
+                                    <Run Text=" to perform bulk administrative actions - such as importing or removing devices from groups, retiring devices, updating Autopilot group tags, renaming devices, removing Android apps, and deleting device records."/>
                                     <LineBreak/><LineBreak/>
 
                                     <Run FontWeight="Bold" Text="📄 Session Logs"/>
@@ -855,6 +855,21 @@
                                     <ComboBoxItem Content="iOS"/>
                                     <ComboBoxItem Content="macOS"/>
                                 </ComboBox>
+                            </Grid>
+
+                            <Grid x:Name="RowNotificationPanel" Grid.Row="6" Margin="0,10,0,0" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Label x:Name="NotificationTitleLabel" Grid.Column="0" Grid.Row="0" Content="Notification Title:" VerticalAlignment="Center"/>
+                                <TextBox x:Name="NotificationTitleBox" Grid.Column="1" Grid.Row="0" Height="32" Text="" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="12,0,0,0"/>
+                                <Label x:Name="NotificationMessageLabel" Grid.Column="0" Grid.Row="1" Content="Message:" VerticalAlignment="Top" Margin="0,8,0,0"/>
+                                <TextBox x:Name="NotificationMessageBox" Grid.Column="1" Grid.Row="1" Height="60" FontSize="13" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Stretch" Text="" VerticalAlignment="Top" HorizontalAlignment="Stretch" Margin="12,8,0,0"/>
                             </Grid>
 
                             <Grid x:Name="RowAppSelectionPanel" Grid.Row="7" Margin="0,10,0,0" Visibility="Collapsed">

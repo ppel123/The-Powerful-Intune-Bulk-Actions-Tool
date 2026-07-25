@@ -1,8 +1,8 @@
 # The Powerful Intune Bulk Actions Tool - Complete Code Documentation
 
-**Version:** 1.0  
-**Last Updated:** March 2026  
-**Total Lines of Code:** ~8,423 lines (script.ps1: 3,743, graphFunctions.psm1: 3,037, otherFunctions.psm1: 1,228, MainWindow.xaml: 415)
+**Version:** 1.2.0  
+**Last Updated:** July 2026  
+**Total Lines of Code:** ~10,539 lines (script.ps1: 4,469, graphFunctions.psm1: 3,853, otherFunctions.psm1: 1,247, MainWindow.xaml: 970)
 
 ---
 
@@ -36,11 +36,11 @@ The Powerful Intune Bulk Actions Tool is a PowerShell-based WPF application desi
 
 | Category | Features |
 |----------|----------|
-| **Reports** | Device Information, Bitlocker Status, Last Logged-on User, Detected Apps, Group Assignments, Group Membership, Autopilot Info, TPM/Hardware Export, User Details, Policy Non-Compliance Settings, **OS Distribution**, **App Version Distribution**, **Group Members Intune Info** |
-| **Actions** | Import Devices to Group, Remove Devices from Group, Empty Group Members, Retire Devices, Update Autopilot Group Tag, Bulk Rename Devices, Reinstall Android App, **Delete Device Records** |
-| **Export** | CSV export for all reports and action results |
-| **Logging** | Comprehensive logging with rotation, log levels, performance timing |
-| **UI** | Asynchronous execution with progress indicators, prevents UI freezing |
+| **Reports (18)** | Device Information, Bitlocker Status, Last Logged-on User, Detected Apps, Group Assignments, Group Membership, Autopilot Info, TPM/Hardware Export, User Details, Policy Non-Compliance Settings, OS Distribution, App Version Distribution, Group Members Intune Info, **Stale Devices**, **Duplicate Device Records**, **App Install Status**, **Low Disk Space Devices**, **Primary User Mismatch** |
+| **Actions (19)** | Import Devices to Group, Remove Devices from Group, Empty Group Members, Retire Devices, Update Autopilot Group Tag, Bulk Rename Devices, Remove Android App, Delete Device Records, **Sync Devices**, **Restart Devices**, **Rotate BitLocker Keys**, **Rotate LAPS Password**, **Remote Lock Devices**, **Defender Quick/Full Scan**, **Set Primary User**, **Set Device Category**, **Set Device Ownership**, **Send Custom Notification** |
+| **Export** | CSV export and clipboard copy for all reports and action results |
+| **Logging** | Comprehensive logging with rotation, log levels, audit log for write operations, live Activity Log panel |
+| **UI** | Modern Fluent-style WPF theme (pure XAML, no external dependencies), asynchronous execution with busy overlays and Force Stop, automatic STA relaunch |
 
 ---
 
@@ -48,13 +48,14 @@ The Powerful Intune Bulk Actions Tool is a PowerShell-based WPF application desi
 
 ```
 IntuneTool/
-├── script.ps1                 # Main entry point (3,743 lines)
-├── graphFunctions.psm1        # Graph API module (3,037 lines)
-├── otherFunctions.psm1        # Utility module (1,228 lines)
-├── MainWindow.xaml            # WPF UI definition (415 lines)
+├── script.ps1                 # Main entry point (4,469 lines)
+├── graphFunctions.psm1        # Graph API module (3,853 lines)
+├── otherFunctions.psm1        # Utility module (1,247 lines)
+├── MainWindow.xaml            # WPF UI definition + Fluent theme (970 lines)
 ├── MainImage.png              # Application logo
-├── MainImage.webp             # Application logo (web format)
-├── readme.md                  # This documentation
+├── readme.md                  # User-facing documentation
+├── CHANGELOG.md               # Version history
+├── config.json                # OPTIONAL, user-created: { "ExportDirectory": "D:\\Path" }
 └── .gitignore                 # Git ignore rules
 ```
 
@@ -72,17 +73,14 @@ The Powerful Intune Bulk Actions Tool is fully tested and supported in the follo
 
 ### How to Run the Tool
 
-For the WPF Graphical User Interface to function correctly, PowerShell requires **Single-Threaded Apartment (STA) mode**.
-
-**Standard Execution Command:**
 ```powershell
-powershell.exe -STA -File ".\script.ps1"
+.\script.ps1
 ```
 
-#### What is STA and why is it required?
-**STA (Single-Threaded Apartment)** is a thread concurrency model used by Microsoft's COM framework. Windows Presentation Foundation (WPF) — which powers the UI of this tool — relies heavily on COM components that demand STA mode for thread safety. 
+That's it. For the WPF Graphical User Interface to function correctly, PowerShell requires **Single-Threaded Apartment (STA) mode** — but the script handles this itself: at startup it checks `[System.Threading.Thread]::CurrentThread.ApartmentState`, and if it is running in MTA mode it automatically relaunches itself in the same console with `-STA` (choosing `pwsh` or `powershell.exe` to match the current edition). PowerShell 7 and the ISE are STA by default.
 
-If you run the script from a standard PowerShell console without `-STA` (which defaults to MTA - Multi-Threaded Apartment), the application might fail to load UI components, and you might see errors like `You cannot call a method on a null-valued expression` at `ShowDialog()`. 
+#### What is STA and why is it required?
+**STA (Single-Threaded Apartment)** is a thread concurrency model used by Microsoft's COM framework. Windows Presentation Foundation (WPF) — which powers the UI of this tool — relies heavily on COM components that demand STA mode for thread safety. Without the automatic relaunch, running in MTA mode would fail to load UI components with errors like `You cannot call a method on a null-valued expression` at `ShowDialog()`.
 
 ### Dependencies & Requirements
 
@@ -94,12 +92,18 @@ If you run the script from a standard PowerShell console without `-STA` (which d
 | Microsoft.VisualBasic | Built-in | UI input dialogs |
 
 **Microsoft Graph SDK:**
+
+Only the required submodules are installed automatically at first run (NOT the full `Microsoft.Graph` meta-module — this keeps first run to a couple of minutes). Install scope is `AllUsers` when elevated, `CurrentUser` otherwise.
+
 | Module | Purpose |
 |--------|---------|
-| Microsoft.Graph.Authentication | Graph API authentication |
-| Microsoft.Graph.DeviceManagement | Device operations |
+| Microsoft.Graph.Authentication | Graph API authentication, `Invoke-MgGraphRequest` |
+| Microsoft.Graph.DeviceManagement | Managed device operations (get/remove/retire) |
+| Microsoft.Graph.DeviceManagement.Enrollment | Autopilot device identities |
+| Microsoft.Graph.Devices.CorporateManagement | Mobile apps (imported by background runspaces) |
 | Microsoft.Graph.Groups | Group management |
 | Microsoft.Graph.Users | User lookups |
+| Microsoft.Graph.Identity.DirectoryManagement | Entra ID device records |
 
 ### Required Graph API Permissions
 
@@ -116,16 +120,18 @@ DeviceManagementServiceConfig.Read.All      # Endpoint security policies, Autopi
 
 # Write Permissions
 Device.Read.All                              # Read device info for group import
+User.Read.All                                # Resolve user UPNs (primary user assignment / mismatch report)
 GroupMember.ReadWrite.All                    # Add/remove devices from groups
-DeviceManagementManagedDevices.ReadWrite.All # Retire devices, Autopilot group tag updates
+DeviceManagementManagedDevices.ReadWrite.All # Retire devices, Autopilot group tags, primary user/category/ownership
+DeviceManagementManagedDevices.PrivilegedOperations.All # Sync, restart, key rotations, remote lock, Defender scans
 ```
 
-**Note:** If you encounter "Forbidden" errors for PowerShell Scripts or Remediation Scripts, disconnect and sign in again to request the updated permissions.
+**Note:** If you encounter "Forbidden" errors — including on the remote actions (Sync/Restart/Rotate/Lock/Scan) after upgrading — disconnect and sign in again to consent to the updated permission set.
 
 ### Full Connection Command
 
 ```powershell
-Connect-MgGraph -Scopes "DeviceManagementManagedDevices.Read.All", "DeviceManagementConfiguration.Read.All", "DeviceManagementApps.Read.All", "DeviceManagementScripts.Read.All", "Group.Read.All", "DeviceManagementServiceConfig.Read.All", "Device.Read.All", "GroupMember.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All"
+Connect-MgGraph -Scopes "DeviceManagementManagedDevices.Read.All", "DeviceManagementConfiguration.Read.All", "DeviceManagementApps.Read.All", "DeviceManagementScripts.Read.All", "Group.Read.All", "DeviceManagementServiceConfig.Read.All", "Device.Read.All", "GroupMember.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All", "DeviceManagementManagedDevices.PrivilegedOperations.All", "User.Read.All"
 ```
 
 ---
@@ -162,7 +168,7 @@ Connect-MgGraph -Scopes "DeviceManagementManagedDevices.Read.All", "DeviceManage
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        MainWindow.xaml                               │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐   │
-│  │   Main Tab   │  │ Reporting Tab│  │     Actions Tab          │   │
+│  │   Home Tab   │  │ Reporting Tab│  │     Actions Tab          │   │
 │  └──────────────┘  └──────────────┘  └──────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -176,31 +182,42 @@ Connect-MgGraph -Scopes "DeviceManagementManagedDevices.Read.All", "DeviceManage
 ```
 1. script.ps1 starts
    │
-   ├─► Check if Microsoft.Graph module is installed
-   │   ├─► If missing: detect admin context (Admin → AllUsers / Non-Admin → CurrentUser)
-   │   └─► Auto-install Microsoft.Graph via Install-Module
+   ├─► Set $script:AppVersion (shown in window title, logged at startup)
+   │
+   ├─► Ensure STA mode
+   │   └─► If MTA: relaunch self with -STA in the same console, exit
+   │
+   ├─► Check required Microsoft.Graph SUBMODULES (7, not the meta-module)
+   │   ├─► Detect admin context (Admin → AllUsers / Non-Admin → CurrentUser)
+   │   └─► Install-Module only the missing ones
    │
    ├─► Import graphFunctions.psm1
    ├─► Import otherFunctions.psm1
    │
+   ├─► Read optional config.json
+   │   └─► Set-ExportDirectory (custom export/log base directory)
+   │
    ├─► Initialize-AppLogging
-   │   └─► Creates log file with rotation
+   │   └─► Creates log file with rotation (C:\Temp\YYYYMMDD, %TEMP% fallback)
    │
    ├─► Load MainWindow.xaml
    │   └─► ConvertTo-EscapedXaml (path transformation)
    │
    ├─► Parse XAML and create WPF Form
-   │   └─► XamlReader.Load()
+   │   ├─► XamlReader.Load()
+   │   └─► Set window title with version
    │
    ├─► Load all XAML controls into $WPF* variables
    │   └─► ForEach x:Name → Set-Variable
+   │
+   ├─► Start Activity Log tail timer (500 ms, feeds LvActivityLog)
    │
    ├─► Check existing Graph connection
    │   └─► Test-MGGraphConnection
    │
    ├─► Populate dropdown menus
-   │   ├─► Report types (13 options)
-   │   ├─► Action types (7 options)
+   │   ├─► Report types (18 options)
+   │   ├─► Action types (19 options)
    │   └─► Device ID types
    │
    ├─► Initialize async RunspacePool
@@ -213,7 +230,8 @@ Connect-MgGraph -Scopes "DeviceManagementManagedDevices.Read.All", "DeviceManage
    │   ├─► Single/Multiple device selection
    │   ├─► Generate Report button
    │   ├─► Perform Action button
-   │   └─► Export buttons
+   │   ├─► Force Stop buttons
+   │   └─► Export/Copy buttons
    │
    └─► Show-Form
        └─► $Form.ShowDialog()
@@ -473,7 +491,7 @@ try {
 
 **Purpose:** Main application entry point, async infrastructure, UI event handling, report/action orchestration.
 
-**Line Count:** ~3,743 lines
+**Line Count:** ~4,469 lines
 
 #### Key Functions
 
@@ -487,11 +505,12 @@ try {
 | `Add-ActivityLogEntry` | Parses log lines and feeds them into the real-time Activity Log ListView |
 | `Show-FilePicker` | WPF file open dialog helper |
 | `Add-SelectFileButton` | Adds a "Select file..." browse button to a grid |
-| `Update-LastSyncTime` | Updates the "Connected: ..." sync time label on Main Tab |
+| `Update-LastSyncTime` | Updates the "Connected: ..." sync time label on the Home tab |
 | `Update-DeviceCount` | Counts devices in a file or pasted text and updates a count label |
 | `Resolve-MultipleDeviceInput` | Resolves bulk device input to a file path; writes a temp file from pasted text |
 | `Copy-ListViewToClipboard` | Copies ListView data to clipboard as tab-separated text |
-| `Initialize-AndroidAppSelection` | Populates Android app dropdown for Reinstall Android App action |
+| `Initialize-AndroidAppSelection` | Populates Android app dropdown for Remove Android App action |
+| `Initialize-DeviceCategorySelection` | Populates device category dropdown (async) for Set Device Category action |
 | `Show-Form` | Displays main window with error handling |
 
 #### State Variables
@@ -533,9 +552,9 @@ try {
 
 **Purpose:** All Microsoft Graph API interactions, device resolution, and data retrieval.
 
-**Line Count:** ~3,037 lines
+**Line Count:** ~3,853 lines
 
-**Exported Functions:** 25
+**Exported Functions:** 36
 
 #### Connection Functions
 
@@ -573,10 +592,15 @@ try {
 | `Get-EntraUserDetails` | User info by UPN | Single/Multiple |
 | `Get-PolicyNonComplianceSettings` | Non-compliant settings per device | Multiple Only |
 | `Get-TPMAndBIOSInfo` | TPM/BIOS/Hardware info for all devices | All Devices (auto) |
-| **`Get-IntuneDetectedApps`** | Detected apps on device(s) | Single/Multiple |
-| **`Get OS Distribution`** | OS build version distribution by platform | Platform Selection |
-| **`Get App Version Distribution`** | App version distribution across devices | Platform + App Selection |
-| **`Get Group Members Intune Info`** | Group device members with Intune details | Group Name/ID |
+| `Get-IntuneDetectedApps` | Detected apps on device(s) | Single/Multiple |
+| `Get OS Distribution` | OS build version distribution by platform | Platform Selection |
+| `Get App Version Distribution` | App version distribution across devices | Platform + App Selection |
+| `Get Group Members Intune Info` | Group device members with Intune details | Group Name/ID |
+| **`Get-StaleIntuneDevices`** | Devices with no check-in for N+ days (fleet-wide scan) | Days threshold |
+| **`Get-DuplicateIntuneDevices`** | Serials with multiple Intune records, keep/cleanup suggestions | None (fleet-wide) |
+| **`Get-LowDiskSpaceDevices`** | Devices below a free-space threshold in GB (fleet-wide scan) | GB threshold |
+| **`Get-PrimaryUserMismatchReport`** | Devices where primary user ≠ last logged-on user (cached user lookups) | None (fleet-wide) |
+| **`Get-AppInstallStatusReport`** | Per-device install state for a selected app via `retrieveDeviceAppInstallationStatusReport` (paged POST, downloaded to temp file) | App selection |
 
 #### Action Functions
 
@@ -590,6 +614,12 @@ try {
 | `Remove-IntuneDeviceRecords` | Delete device records from Intune, Autopilot, and Entra ID | Multiple + Options |
 | `Resolve-DeviceIdsFromInput` | Resolves device IDs from single input or file path to a common format | FilePath/SingleId + IDType |
 | `Invoke-AndroidAppChangeAssignments` | Changes app assignment intent (Install/Uninstall) on devices | DeviceId, AppId, Action |
+| **`Invoke-IntuneBulkDeviceAction`** | Generic engine for Sync / Restart / Rotate BitLocker Keys / Rotate LAPS Password / Remote Lock / Defender Quick+Full Scan | Multiple + ActionName |
+| **`Set-IntuneDevicePrimaryUser`** | Sets the Intune primary user (resolves the UPN once, then `users/$ref` POST per device) | Multiple + UPN |
+| **`Get-IntuneDeviceCategories`** | Lists tenant device categories (feeds the category picker) | None |
+| **`Set-IntuneDeviceCategory`** | Assigns a device category (`deviceCategory/$ref` PUT) | Multiple + Category |
+| **`Set-IntuneDeviceOwnership`** | Flips ownership company/personal (PATCH `managedDeviceOwnerType`) | Multiple + Ownership |
+| **`Send-IntuneCustomNotification`** | Sends a Company Portal push notification (iOS/Android) | Multiple + Title/Message |
 
 #### Retry Logic
 
@@ -623,9 +653,9 @@ while ($retryCount -lt $maxRetries) {
 
 **Purpose:** Logging system, UI helper functions, and export functionality.
 
-**Line Count:** ~1,228 lines
+**Line Count:** ~1,247 lines
 
-**Exported Functions:** 15
+**Exported Functions:** 18
 
 #### Configuration Constants
 
@@ -648,22 +678,20 @@ $script:LogLevelPriority = @{
 
 | Function | Purpose | Key Parameters |
 |----------|---------|----------------|
-| `Initialize-AppLogging` | Creates log file with rotation | None (uses defaults) |
+| `Initialize-AppLogging` | Creates log file with rotation | LogDirectory (optional), MaxLogFiles, MaxLogSizeMB |
 | `Write-AppLog` | Main logging function | Message, Level, Details |
+| `Write-AuditLog` | Audit trail for write/destructive operations (before/after state) | Operation, Target, Result, Details |
 | `Write-AppLogSection` | Section headers in log | Title |
-| `Write-AppLogDeviceList` | Logs device list | Devices, Description |
 | `Write-AppLogResults` | Logs operation results | Results, Operation |
-| `Set-LogLevel` | Sets runtime log level | Level |
-| `Get-LogLevel` | Gets current log level | None |
+| `Format-ActionableError` | Builds user-friendly error messages with next steps | ErrorType, Identifier, Operation |
 | `Get-AppLogPath` | Returns current log path | None |
-| `Measure-Operation` | Performance timing wrapper | Name, ScriptBlock |
 
 #### Export Functions
 
 | Function | Purpose | Key Parameters |
 |----------|---------|----------------|
-| `Set-ExportDirectory` | Sets export path | Directory |
-| `Get-ExportDirectory` | Gets export path | None (returns script path if unset) |
+| `Set-ExportDirectory` | Sets export/log base path (called by config.json support) | Path |
+| `Get-ExportDirectory` | Gets today's dated export directory; falls back to `%TEMP%\IntuneTool` when the base is not writable | None (default base: `C:\Temp`) |
 | `Export-ListViewToCsv` | Exports ListView to CSV | ListView, ExportName |
 
 #### UI Helper Functions
@@ -678,13 +706,14 @@ $script:LogLevelPriority = @{
 
 ```powershell
 # Initialize-AppLogging pattern
-$logDir = Join-Path $scriptDir "Logs"
-$existingLogs = Get-ChildItem -Path $logDir -Filter "IntuneTool_*.log" | 
-    Sort-Object CreationTime -Descending
+# Base directory: config.json ExportDirectory > C:\Temp > %TEMP%\IntuneTool fallback
+$logDir = Get-ExportDirectory        # e.g. C:\Temp\20260725
+$existingLogs = Get-ChildItem -Path $logDir -Filter "IntuneTool_*.log" |
+    Sort-Object LastWriteTime -Descending
 
-# Keep only MaxLogFiles
+# Keep only MaxLogFiles (per day folder)
 if ($existingLogs.Count -ge $MaxLogFiles) {
-    $existingLogs | Select-Object -Skip ($MaxLogFiles - 1) | 
+    $existingLogs | Select-Object -Skip ($MaxLogFiles - 1) |
         Remove-Item -Force
 }
 
@@ -697,15 +726,19 @@ $logPath = Join-Path $logDir "IntuneTool_$timestamp.log"
 
 ### 7.4 MainWindow.xaml
 
-**Purpose:** WPF user interface definition.
+**Purpose:** WPF user interface definition, including the complete modern theme.
 
-**Line Count:** ~415 lines
+**Line Count:** ~970 lines
+
+#### Modern Theme (v1.1+)
+
+All styling lives in `Window.Resources` as pure XAML styles and control templates — no external theme libraries. Includes: Fluent-style tab strip with accent underline, card layout, retemplated Button/TextBox/ComboBox/CheckBox/Expander/ListView/GridViewColumnHeader/ToolTip, pill-style connection badges, and color-coded Activity Log levels. Important quirk: the TextBox template must NOT add a Margin bound to Padding on `PART_ContentHost` — WPF applies the control Padding internally, and doubling it clips the text.
 
 #### Tab Structure
 
 | Tab | Purpose | Key Elements |
 |-----|---------|--------------|
-| Main Tab | Welcome screen, Sign-in | SignInButtonCopy, DisconnectBtn, Connected, NotConnectedLabel |
+| Home Tab | Welcome screen, Sign-in | SignInButtonCopy, DisconnectBtn, Connected, NotConnectedLabel, LastSyncTimeLabel |
 | Reporting Tab | Report selection and display | ReportType, listview, BusyOverlay, ExportReportButton |
 | Actions Tab | Action execution | ActionType, listviewAction, BusyOverlayAction, ExportActionButton |
 
@@ -735,6 +768,16 @@ $logPath = Join-Path $logDir "IntuneTool_$timestamp.log"
 | `RenameOptionsPanel` | Container for rename options |
 | `RenamePrefixBox` | TextBox for naming prefix |
 | `RenamePlatformCombo` | ComboBox for platform filter (Windows/Android/iOS) |
+
+#### Custom Notification Elements (v1.2)
+
+| Element | Purpose |
+|---------|---------|
+| `RowNotificationPanel` | Container for the Send Custom Notification inputs |
+| `NotificationTitleBox` | TextBox for the notification title |
+| `NotificationMessageBox` | Multiline TextBox for the notification message |
+
+**Panel reuse note (v1.2):** several new features repurpose existing panels at runtime instead of adding new XAML — `PolicyIDLabel`/`PolicyIDBox` double as the threshold input for the Stale Devices and Low Disk Space reports, `GroupTagLabel`/`GroupTagBox` double as the UPN input for Set Primary User, and `AndroidAppLabel`/`AndroidAppCombo` double as the category/ownership picker. Labels are reset at the top of each SelectionChanged handler.
 
 #### UI Element Reference
 
@@ -781,9 +824,24 @@ Export-ModuleMember -Function @(
     'Resolve-DeviceIdsFromInput',
     'Invoke-AndroidAppChangeAssignments',
 
+    # Bulk remote actions (v1.2)
+    'Invoke-IntuneBulkDeviceAction',
+    'Set-IntuneDevicePrimaryUser',
+    'Get-IntuneDeviceCategories',
+    'Set-IntuneDeviceCategory',
+    'Set-IntuneDeviceOwnership',
+    'Send-IntuneCustomNotification',
+
+    # Fleet-wide reports (v1.2)
+    'Get-StaleIntuneDevices',
+    'Get-DuplicateIntuneDevices',
+    'Get-LowDiskSpaceDevices',
+    'Get-PrimaryUserMismatchReport',
+    'Get-AppInstallStatusReport',
+
     # User functions
     'Get-EntraUserDetails',
-    
+
     # Policy functions
     'Get-PolicyNonComplianceSettings'
 )
@@ -793,21 +851,33 @@ Export-ModuleMember -Function @(
 
 ```powershell
 Export-ModuleMember -Function @(
-    'Set-ExportDirectory',
+    # Configuration functions
     'Get-ExportDirectory',
+    'Set-ExportDirectory',
+
+    # Logging functions
     'Initialize-AppLogging',
     'Write-AppLog',
+    'Write-AuditLog',
+    'Format-ActionableError',
     'Write-AppLogSection',
-    'Write-AppLogDeviceList',
     'Write-AppLogResults',
     'Get-AppLogPath',
-    'Set-LogLevel',
-    'Get-LogLevel',
-    'Measure-Operation',
+
+    # Helper functions (reduce code repetition)
+    'Test-FileInputValidation',
+    'Get-IdentifierType',
+    'Get-ResultSummary',
+
+    # UI helper functions
     'UnhideItems',
     'HideItems',
     'FillDataListView',
-    'Export-ListViewToCsv'
+    'Export-ListViewToCsv',
+
+    # Device rename functions
+    'Get-IntuneDevicesForRename',
+    'Set-IntuneDeviceName'
 )
 ```
 
@@ -1022,15 +1092,22 @@ function Write-AppLog {
     )
 }
 
-function Measure-Operation {
+function Write-AuditLog {
     param(
         [Parameter(Mandatory=$true)]
-        [string]$Name,
-        
+        [string]$Operation,      # e.g. "DeviceRetire", "SetPrimaryUser"
+
         [Parameter(Mandatory=$true)]
-        [scriptblock]$ScriptBlock
+        [string]$Target,         # Device/group name
+
+        [string]$TargetType = "Device",
+        [string]$BeforeState = "",
+        [string]$AfterState = "",
+        [string]$Result = "Success",
+        [string]$ErrorMessage = "",
+        [string]$Details = ""
     )
-    # Returns: Result of ScriptBlock, logs execution time
+    # Writes an audit trail entry for every write/destructive operation
 }
 ```
 
@@ -1038,15 +1115,17 @@ function Measure-Operation {
 
 ## 9. UI Element Reference
 
-### 9.1 Main Tab Elements
+### 9.1 Home Tab Elements
 
 | Element Name | Type | Purpose |
 |-------------|------|---------|
 | `MainImage` | Image | Application logo |
-| `SignInButtonCopy` | Button | Initiates Graph sign-in |
+| `SignInButtonCopy` | Button | Initiates Graph sign-in (accent style) |
 | `DisconnectBtn` | Button | Disconnects from Graph |
-| `NotConnectedLabel` | Label | Shows "Not Connected Yet" |
-| `Connected` | Label | Shows "Connected" (green) |
+| `NotConnectedLabel` | Label | Red pill badge "Not Connected" |
+| `ConnectedPanel` | StackPanel | Container shown when connected |
+| `Connected` | Label | Green pill badge "Connected" |
+| `LastSyncTimeLabel` | TextBlock | "Connected: <time>" caption |
 | `MainTextBox` | TextBlock | Welcome message |
 
 ### 9.2 Reporting Tab Elements
@@ -1066,8 +1145,10 @@ function Measure-Operation {
 | `MultipleDevicesInfoBox` | TextBox | File path input |
 | `GroupInputLabelReporting` | Label | Group input label |
 | `GroupInputBoxReporting` | TextBox | Group name/ID input |
-| `PolicyIDLabel` | Label | Policy ID label |
-| `PolicyIDBox` | TextBox | Policy GUID input |
+| `PolicyIDLabel` | Label | Policy ID label (repurposed as threshold label for Stale/Low Disk reports) |
+| `PolicyIDBox` | TextBox | Policy GUID input (repurposed as days/GB threshold input) |
+| `DeviceCountLabel` | TextBlock | Live "(N devices)" count for file/pasted input |
+| `PastedDevicesTextBox` | TextBox | Multiline paste-IDs input (alternative to file) |
 | `PostRequestNote` | Label | POST request info note |
 | **`PlatformSelectLabel`** | Label | "Select Platform:" label |
 | **`PlatformSelectCombo`** | ComboBox | Platform dropdown (Windows/Android/iOS/macOS) |
@@ -1117,9 +1198,15 @@ function Measure-Operation {
 | **RenameOptionsPanel** | StackPanel | Container for rename options |
 | **RenamePrefixBox** | TextBox | Naming prefix input |
 | **RenamePlatformCombo** | ComboBox | Platform filter (Windows/Android/iOS) |
-| **RowAppSelectionPanel** | StackPanel | Container for Android app selection |
-| **AndroidAppLabel** | Label | Label for app dropdown |
-| **AndroidAppCombo** | ComboBox | Android app selection dropdown |
+| **RowAppSelectionPanel** | StackPanel | Container for Android app selection (also reused as category/ownership picker) |
+| **AndroidAppLabel** | Label | Label for app dropdown (relabeled at runtime for category/ownership) |
+| **AndroidAppCombo** | ComboBox | Android app selection dropdown (also holds categories or Company/Personal) |
+| **RowNotificationPanel** | Grid | Container for Send Custom Notification inputs (v1.2) |
+| **NotificationTitleBox** | TextBox | Notification title input (v1.2) |
+| **NotificationMessageBox** | TextBox | Multiline notification message input (v1.2) |
+| **DeviceCountLabelAction** | TextBlock | Live "(N devices)" count for file/pasted input |
+| **PastedDevicesTextBoxAction** | TextBox | Multiline paste-IDs input (alternative to file) |
+| **CopyActionButton** | Button | Copy results to clipboard |
 
 ### 9.4 PowerShell Variable Mapping
 
@@ -1302,11 +1389,13 @@ function New-ErrorResult {
 |-------|----------|-------|
 | DEBUG | 0 | Detailed diagnostic information |
 | INFO | 1 | General operational messages |
-| USER | 2 | User-initiated actions (clicks, selections) |
-| REPORT | 3 | Report execution events |
-| ACTION | 4 | Action execution events |
-| WARNING | 5 | Potential issues, validation failures |
-| ERROR | 6 | Errors and exceptions |
+| USER | 1 | User-initiated actions (clicks, selections) |
+| REPORT | 1 | Report execution events |
+| ACTION | 1 | Action execution events |
+| WARNING | 2 | Potential issues, validation failures |
+| ERROR | 3 | Errors and exceptions |
+
+Levels are also color-coded in the live **Activity Log** panel (ERROR red, WARNING amber, INFO blue, USER green).
 
 ### 12.2 Log File Format
 
@@ -1338,11 +1427,16 @@ Computer: WORKSTATION01
 ### 12.3 Log Location
 
 ```powershell
-# Default log location
-$scriptDir\Logs\IntuneTool_yyyyMMdd_HHmmss.log
+# Default log location (dated subfolder per day)
+C:\Temp\YYYYMMDD\IntuneTool_yyyyMMdd_HHmmss.log
 
 # Example
-C:\Users\admin\IntuneTool\Logs\IntuneTool_20240315_143025.log
+C:\Temp\20260725\IntuneTool_20260725_143025.log
+
+# Custom base directory: config.json next to script.ps1
+#   { "ExportDirectory": "D:\\IntuneToolLogs" }
+# Fallback when the base directory is not writable:
+#   %TEMP%\IntuneTool\YYYYMMDD\
 ```
 
 ---
@@ -1353,7 +1447,7 @@ C:\Users\admin\IntuneTool\Logs\IntuneTool_20240315_143025.log
 
 | File Pattern | Location | Rotation |
 |-------------|----------|----------|
-| `IntuneTool_yyyyMMdd_HHmmss.log` | `$scriptDir\Logs\` | Max 5 files, Max 10MB each |
+| `IntuneTool_yyyyMMdd_HHmmss.log` | `C:\Temp\YYYYMMDD\` (configurable, `%TEMP%\IntuneTool` fallback) | Max 5 files per day folder, Max 10MB each |
 
 ### 13.2 Export Files
 
@@ -1366,13 +1460,17 @@ C:\Users\admin\IntuneTool\Logs\IntuneTool_20240315_143025.log
 ### 13.3 Export Directory Configuration
 
 ```powershell
-# Set custom export directory
-Set-ExportDirectory -Directory "C:\Exports"
+# Preferred: create config.json next to script.ps1
+#   { "ExportDirectory": "D:\\IntuneToolExports" }
+# (read at startup, applied via Set-ExportDirectory)
 
-# Get current export directory
-$exportPath = Get-ExportDirectory
+# Programmatic equivalent
+Set-ExportDirectory -Path "C:\Exports"
 
-# Default: $scriptDir (where script.ps1 is located)
+# Get today's dated working directory (creates it if needed)
+$exportPath = Get-ExportDirectory    # e.g. C:\Temp\20260725
+
+# Default base: C:\Temp - falls back to %TEMP%\IntuneTool when not writable
 ```
 
 ---
@@ -1391,9 +1489,14 @@ $exportPath = Get-ExportDirectory
 | Export TPM/Hardware Info | None | No input needed (all Windows devices) |
 | Get User Details | Both | SingleDeviceInfoBox (UPN) or MultipleDevicesInfoBox |
 | Get Policy Non-Compliance | Multiple Only | MultipleDevicesInfoBox + ID Type + PolicyIDBox |
-| **Get OS Distribution** | Platform Only | PlatformSelectCombo (Windows/Android/iOS/macOS) |
-| **Get App Version Distribution** | Platform + App | PlatformSelectCombo → AppSelectCombo (dynamic) |
-| **Get Group Members Intune Info** | Group Only | GroupInputBoxReporting (group name or Object ID) |
+| Get OS Distribution | Platform Only | PlatformSelectCombo (Windows/Android/iOS/macOS) |
+| Get App Version Distribution | Platform + App | PlatformSelectCombo → AppSelectCombo (dynamic) |
+| Get Group Members Intune Info | Group Only | GroupInputBoxReporting (group name or Object ID) |
+| **Get Stale Devices** | Threshold Only | PolicyIDBox (days without check-in, default 30) |
+| **Get Duplicate Device Records** | None | No input (fleet-wide scan) |
+| **Get App Install Status** | Platform + App | PlatformSelectCombo → AppSelectCombo (dynamic) |
+| **Get Low Disk Space Devices** | Threshold Only | PolicyIDBox (minimum free GB, default 10) |
+| **Get Primary User Mismatch** | None | No input (fleet-wide scan) |
 
 ---
 
@@ -1407,8 +1510,13 @@ $exportPath = Get-ExportDirectory
 | Retire Devices | Multiple Only | MultipleDevicesInfoBoxAction + ID Type |
 | Update Autopilot Group Tag | Multiple Only | MultipleDevicesInfoBoxAction (serials) + GroupTagBox |
 | Bulk Rename Devices | Both | Scope selector + RenamePrefixBox + RenamePlatformCombo |
-| Reinstall Android App | Both | Device input + AndroidAppCombo |
+| Remove Android App | Both | Device input + AndroidAppCombo |
 | Delete Device Records | Multiple Only | MultipleDevicesInfoBoxAction + ID Type + DeleteIntuneCheckbox / DeleteAutopilotCheckbox / DeleteEntraCheckbox + WhatIfModeCheckbox |
+| **Sync / Restart / Rotate BitLocker Keys / Rotate LAPS Password / Remote Lock / Defender Quick+Full Scan** | Multiple Only | MultipleDevicesInfoBoxAction (or pasted IDs) + ID Type |
+| **Set Primary User** | Multiple Only | Device input + ID Type + GroupTagBox (relabeled "New Primary User (UPN):") |
+| **Set Device Category** | Multiple Only | Device input + ID Type + AndroidAppCombo (relabeled "Select Category:", loaded from Graph) |
+| **Set Device Ownership** | Multiple Only | Device input + ID Type + AndroidAppCombo (relabeled "New Ownership:", Company/Personal) |
+| **Send Custom Notification** | Multiple Only | Device input + ID Type + NotificationTitleBox + NotificationMessageBox |
 
 ---
 
@@ -1432,5 +1540,17 @@ $exportPath = Get-ExportDirectory
 | `/deviceManagement/deviceConfigurations` | GET | Device configurations |
 | `/deviceManagement/configurationPolicies` | GET | Settings catalog policies |
 | `/deviceManagement/reports/getDevicesWithoutCompliancePolicyReport` | POST | Non-compliance report |
-| **`/deviceAppManagement/mobileApps`** | GET | List mobile apps (filtered by platform type) |
-| **`/deviceManagement/reports/retrieveDeviceAppInstallationStatusReport`** | POST | App installation status report (for App Version Distribution) |
+| `/deviceAppManagement/mobileApps` | GET | List mobile apps (filtered by platform type) |
+| `/deviceManagement/reports/retrieveDeviceAppInstallationStatusReport` | POST | App install status report (App Version Distribution + Get App Install Status; response is an octet-stream attachment, downloaded via `-OutputFilePath`) |
+| **`/deviceManagement/managedDevices/{id}/syncDevice`** | POST | Force device check-in |
+| **`/deviceManagement/managedDevices/{id}/rebootNow`** | POST | Restart device |
+| **`/deviceManagement/managedDevices/{id}/rotateBitLockerKeys`** | POST | Rotate BitLocker recovery keys |
+| **`/deviceManagement/managedDevices/{id}/rotateLocalAdminPassword`** | POST | Rotate Windows LAPS password |
+| **`/deviceManagement/managedDevices/{id}/remoteLock`** | POST | Remote lock device |
+| **`/deviceManagement/managedDevices/{id}/windowsDefenderScan`** | POST | Defender scan (body: `{ quickScan: bool }`) |
+| **`/deviceManagement/managedDevices/{id}/sendCustomNotificationToCompanyPortal`** | POST | Company Portal push notification |
+| **`/deviceManagement/managedDevices('{id}')/users/$ref`** | POST | Set primary user |
+| **`/deviceManagement/managedDevices('{id}')/deviceCategory/$ref`** | PUT | Assign device category |
+| **`/deviceManagement/managedDevices/{id}`** | PATCH | Change ownership (`managedDeviceOwnerType`) |
+| **`/deviceManagement/deviceCategories`** | GET | List device categories (picker) |
+| **`/deviceAppManagement/mobileApps/{id}/deviceStatuses`** | — | NOT USED: rejects `$top` and returns empty for WinGet apps (replaced by the reports endpoint above) |

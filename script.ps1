@@ -21,13 +21,16 @@ Group Management:
 
 Actions (Write):
   - GroupMember.ReadWrite.All                    (Add/remove devices from groups)
-  - DeviceManagementManagedDevices.ReadWrite.All (Retire devices, update Autopilot group tags)
+  - DeviceManagementManagedDevices.ReadWrite.All (Retire devices, update Autopilot group tags, primary user/category/ownership)
+  - DeviceManagementManagedDevices.PrivilegedOperations.All (Sync, restart, key rotations, remote lock, Defender scans)
+  - User.Read.All                                (Resolve user UPNs for primary user assignment / mismatch report)
 
-NOTE: If you see "Forbidden" errors for PowerShell Scripts or Remediation Scripts,
-you need to disconnect and sign in again to request the new permissions.
+NOTE: If you see "Forbidden" errors for PowerShell Scripts, Remediation Scripts,
+or the newer remote actions (Sync/Restart/Rotate/Lock/Scan), you need to
+disconnect and sign in again to request the new permissions.
 
 To manually connect with all required permissions, use:
-  Connect-MgGraph -Scopes "DeviceManagementManagedDevices.Read.All", "DeviceManagementConfiguration.Read.All", "DeviceManagementApps.Read.All", "DeviceManagementScripts.Read.All", "Group.Read.All", "DeviceManagementServiceConfig.Read.All", "Device.Read.All", "GroupMember.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All"
+  Connect-MgGraph -Scopes "DeviceManagementManagedDevices.Read.All", "DeviceManagementConfiguration.Read.All", "DeviceManagementApps.Read.All", "DeviceManagementScripts.Read.All", "Group.Read.All", "DeviceManagementServiceConfig.Read.All", "Device.Read.All", "GroupMember.ReadWrite.All", "DeviceManagementManagedDevices.ReadWrite.All", "DeviceManagementManagedDevices.PrivilegedOperations.All", "User.Read.All"
 
 ================================================================================
 #>
@@ -37,7 +40,7 @@ $scriptDir = $PSScriptRoot
 #===========================================================================
 # APP VERSION
 #===========================================================================
-$script:AppVersion = "1.1.0"
+$script:AppVersion = "1.2.0"
 
 #===========================================================================
 # ENSURE STA MODE (required by WPF)
@@ -1033,7 +1036,12 @@ $reportTypes = @(
     "Get Policy Non-Compliance Settings - Non-compliant settings",
     "Get OS Distribution - OS version counts",
     "Get App Version Distribution - App version counts",
-    "Get Group Members Intune Info - Group devices info"
+    "Get Group Members Intune Info - Group devices info",
+    "Get Stale Devices - No check-in for X days",
+    "Get Duplicate Device Records - Same serial, multiple records",
+    "Get App Install Status - Per-device install state",
+    "Get Low Disk Space Devices - Free space below X GB",
+    "Get Primary User Mismatch - Primary vs last logged-on"
 )
 
 # Iterate through each report type and add it as an item in the 'ReportType' dropdown
@@ -1058,6 +1066,11 @@ $script:reportDescriptions = @{
     "Get OS Distribution - OS version counts" = "Shows the distribution of OS build versions for corporate devices. Select a platform to see counts of each build number."
     "Get App Version Distribution - App version counts" = "Shows installed version distribution for a specific app across devices. Select platform, then app to see which versions are deployed. Uses POST request (read-only)."
     "Get Group Members Intune Info - Group devices info" = "Retrieves all device members of a group and shows their Intune information including compliance, OS version, last sync, and enrollment status."
+    "Get Stale Devices - No check-in for X days" = "Scans ALL managed devices and lists those that have not checked in for more than the specified number of days. Export the results and feed them back into Retire/Delete actions for cleanup. May take several minutes on large tenants."
+    "Get Duplicate Device Records - Same serial, multiple records" = "Scans ALL managed devices and flags serial numbers with more than one Intune record. The newest record is marked 'Keep'; older ones are cleanup candidates. May take several minutes on large tenants."
+    "Get App Install Status - Per-device install state" = "Shows the per-device install status of a specific app (installed, failed, pending). Select a platform, then the app. Uses a POST request (read-only)."
+    "Get Low Disk Space Devices - Free space below X GB" = "Scans ALL managed devices and lists those with less free disk space than the specified threshold. Useful before Windows feature updates. May take several minutes on large tenants."
+    "Get Primary User Mismatch - Primary vs last logged-on" = "Scans ALL managed devices and lists those where the Intune primary user differs from the most recent logged-on user. Fix mismatches in bulk with the 'Set Primary User' action. May take several minutes on large tenants."
 }
 
 # Attach an event handler to the SelectionChanged event of the 'ReportType' dropdown
@@ -1091,7 +1104,10 @@ $Form.FindName("ReportType").Add_SelectionChanged({
         $descriptionLabel.Text = ""
         $descriptionLabel.Visibility = "Collapsed"
     }
-    
+
+    # Reset the Row5 label (repurposed as a threshold input by some reports)
+    $Form.FindName("PolicyIDLabel").Content = "Policy ID (GUID):"
+
     if ($selectedReport -like "Get Group Assignments*") {
         # For group assignments, we only need single group input (Row2)
         UnhideItems -ItemNames @("Row2ReportingPanel")
@@ -1196,9 +1212,35 @@ $Form.FindName("ReportType").Add_SelectionChanged({
         UnhideItems -ItemNames @("Row4ReportingPanel")
         HideItems -ItemNames @("Row1ReportingPanel", "Row2ReportingPanel", "Row3ReportingPanel", "Row5ReportingPanel", "Row6ReportingPanel", "Row7ReportingPanel", "listview", "ResultsTextBox", "PostRequestNote")
         $script:IsSingleDevice = $null
-        
+
         # Clear the group input box
         $Form.FindName("GroupInputBoxReporting").Text = ""
+    } elseif ($selectedReport -like "Get Stale Devices*") {
+        # Fleet-wide scan with a days threshold (Row5 repurposed as number input)
+        UnhideItems -ItemNames @("Row5ReportingPanel")
+        HideItems -ItemNames @("Row1ReportingPanel", "Row2ReportingPanel", "Row3ReportingPanel", "Row4ReportingPanel", "Row6ReportingPanel", "Row7ReportingPanel", "listview", "ResultsTextBox", "PostRequestNote")
+        $script:IsSingleDevice = $null
+        $Form.FindName("PolicyIDLabel").Content = "Days since last check-in:"
+        $Form.FindName("PolicyIDBox").Text = "30"
+    } elseif ($selectedReport -like "Get Low Disk Space Devices*") {
+        # Fleet-wide scan with a free-GB threshold (Row5 repurposed as number input)
+        UnhideItems -ItemNames @("Row5ReportingPanel")
+        HideItems -ItemNames @("Row1ReportingPanel", "Row2ReportingPanel", "Row3ReportingPanel", "Row4ReportingPanel", "Row6ReportingPanel", "Row7ReportingPanel", "listview", "ResultsTextBox", "PostRequestNote")
+        $script:IsSingleDevice = $null
+        $Form.FindName("PolicyIDLabel").Content = "Minimum free space (GB):"
+        $Form.FindName("PolicyIDBox").Text = "10"
+    } elseif ($selectedReport -like "Get Duplicate Device Records*" -or $selectedReport -like "Get Primary User Mismatch*") {
+        # Fleet-wide scans with no additional inputs
+        HideItems -ItemNames @("Row1ReportingPanel", "Row2ReportingPanel", "Row3ReportingPanel", "Row4ReportingPanel", "Row5ReportingPanel", "Row6ReportingPanel", "Row7ReportingPanel", "listview", "ResultsTextBox", "PostRequestNote")
+        $script:IsSingleDevice = $null
+    } elseif ($selectedReport -like "Get App Install Status*") {
+        # Platform selection (Row6) -> app selection (Row7), same flow as App Version Distribution
+        # Shows PostRequestNote because this report uses a read-only POST request
+        UnhideItems -ItemNames @("Row6ReportingPanel", "PostRequestNote")
+        HideItems -ItemNames @("Row1ReportingPanel", "Row2ReportingPanel", "Row3ReportingPanel", "Row4ReportingPanel", "Row5ReportingPanel", "Row7ReportingPanel", "listview", "ResultsTextBox")
+        $script:IsSingleDevice = $null
+        $Form.FindName("PlatformSelectCombo").SelectedIndex = -1
+        $Form.FindName("AppSelectCombo").Items.Clear()
     } else {
         # For device reports (Get Device Information, Get Bitlocker Status, Get Device Last Logged-on User)
         # Show single/multiple selection (Row1)
@@ -1220,8 +1262,8 @@ $Form.FindName("ReportType").Add_SelectionChanged({
 $Form.FindName("PlatformSelectCombo").Add_SelectionChanged({
     $selectedReport = $Form.FindName("ReportType").SelectedItem
     
-    # Only populate apps if we're on the App Version Distribution report AND a valid selection was made
-    if ($selectedReport -like "Get App Version Distribution*") {
+    # Only populate apps if we're on a report that needs an app picker AND a valid selection was made
+    if ($selectedReport -like "Get App Version Distribution*" -or $selectedReport -like "Get App Install Status*") {
         $platformCombo = $Form.FindName("PlatformSelectCombo")
         $selectedItem = $platformCombo.SelectedItem
         
@@ -1470,6 +1512,17 @@ $actionTypes = @(
     "Import Devices to Group - Add to group",
     "Remove Devices from Group - Remove from group",
     "Empty Group Members - Clear all members",
+    "Sync Devices - Force check-in now",
+    "Restart Devices - Reboot now",
+    "Rotate BitLocker Keys - New recovery keys",
+    "Rotate LAPS Password - New local admin password",
+    "Remote Lock Devices - Lock lost/stolen devices",
+    "Defender Quick Scan - Antivirus quick scan",
+    "Defender Full Scan - Antivirus full scan",
+    "Set Primary User - Assign device owner",
+    "Set Device Category - Assign category",
+    "Set Device Ownership - Corporate or Personal",
+    "Send Custom Notification - Message via Company Portal",
     "Retire Devices - Remove company data",
     "Update Autopilot Group Tag - Change group tag",
     "Bulk Rename Devices - Rename by serial",
@@ -1492,6 +1545,17 @@ $script:actionDescriptions = @{
     "Bulk Rename Devices - Rename by serial" = "Renames devices based on a prefix and 8 last digit of serial number suffix. Choose 'All Corporate' or a File list."
     "Remove Android App - Intune remote action" = "Sends an Intune remote action to remove the selected Android app from target devices. The app can be reinstalled manually or via policy after removal."
     "Delete Device Records - Delete from Intune" = "DESTRUCTIVE: Permanently deletes device records from Intune, Autopilot, and Entra ID. This action CANNOT be undone!"
+    "Sync Devices - Force check-in now" = "Sends a sync (check-in) command to the devices, forcing them to check in with Intune immediately and pick up pending policies and apps."
+    "Restart Devices - Reboot now" = "Sends a restart command to the devices. Users are NOT warned before the reboot - use with care during working hours."
+    "Rotate BitLocker Keys - New recovery keys" = "Rotates the BitLocker recovery keys on Windows devices. New keys are escrowed to Entra ID automatically."
+    "Rotate LAPS Password - New local admin password" = "Rotates the Windows LAPS local administrator password on the devices. Requires LAPS to be configured via policy."
+    "Remote Lock Devices - Lock lost/stolen devices" = "Remotely locks the devices. Useful for lost or stolen scenarios. Not supported on all platforms (works best on mobile/macOS)."
+    "Defender Quick Scan - Antivirus quick scan" = "Triggers a Microsoft Defender Antivirus QUICK scan on Windows devices."
+    "Defender Full Scan - Antivirus full scan" = "Triggers a Microsoft Defender Antivirus FULL scan on Windows devices. Full scans can take a long time and impact device performance."
+    "Set Primary User - Assign device owner" = "Sets the Intune primary user on the devices to the specified UPN. Pairs with the 'Get Primary User Mismatch' report to fix wrong assignments in bulk."
+    "Set Device Category - Assign category" = "Assigns the selected Intune device category to the devices. Categories are managed in the Intune admin center."
+    "Set Device Ownership - Corporate or Personal" = "Changes the device ownership type (Company / Personal). Ownership affects available management actions and privacy behavior."
+    "Send Custom Notification - Message via Company Portal" = "Sends a custom push notification (title + message) to the Company Portal app on iOS/Android devices. Ignored by Windows/macOS devices."
 }
 
 # Attach an event handler to the SelectionChanged event of the 'ActionType' dropdown
@@ -1512,8 +1576,10 @@ $Form.FindName("ActionType").Add_SelectionChanged({
     $Form.FindName("SingleOrMultipleDevicesAction").SelectedIndex = -1
     $WPFGroupInputBox.Text = ""
     $WPFGroupTagBox.Text = ""
+    $Form.FindName("NotificationTitleBox").Text = ""
+    $Form.FindName("NotificationMessageBox").Text = ""
     $WPFlistviewAction.Items.Clear()
-    
+
     # Update and show description for selected action
     $actionDescriptionLabel = $Form.FindName("ActionDescriptionLabel")
     if ($selectedAction -and $script:actionDescriptions.ContainsKey($selectedAction)) {
@@ -1523,7 +1589,12 @@ $Form.FindName("ActionType").Add_SelectionChanged({
         $actionDescriptionLabel.Text = ""
         $actionDescriptionLabel.Visibility = "Collapsed"
     }
-    
+
+    # Reset panels/labels that newer actions repurpose, so every branch starts clean
+    HideItems -ItemNames @("RowNotificationPanel")
+    $Form.FindName("GroupTagLabel").Content = "New Group Tag:"
+    $Form.FindName("AndroidAppLabel").Content = "Select Android App:"
+
     if ($selectedAction -like "Import Devices to Group*") {
         # Show single/multiple selection for devices (Row1: single/multiple dropdown)
         UnhideItems -ItemNames @("Row1ActionPanel")
@@ -1625,7 +1696,95 @@ $Form.FindName("ActionType").Add_SelectionChanged({
         $Form.FindName("DeleteEntraCheckbox").IsChecked = $true
         $Form.FindName("WhatIfModeCheckbox").IsChecked = $true  # Default to WhatIf ON for safety
     }
-    
+    elseif ($selectedAction -like "Sync Devices*" -or $selectedAction -like "Restart Devices*" -or
+            $selectedAction -like "Rotate BitLocker Keys*" -or $selectedAction -like "Rotate LAPS Password*" -or
+            $selectedAction -like "Remote Lock Devices*" -or $selectedAction -like "Defender Quick Scan*" -or
+            $selectedAction -like "Defender Full Scan*") {
+        # Bulk remote actions: file/paste device input only (Row3)
+        UnhideItems -ItemNames @("Row3ActionPanel")
+        HideItems -ItemNames @("Row1ActionPanel", "Row2ActionPanel", "Row4ActionPanel", "Row5ActionPanel", "listviewAction", "RenameOptionsPanel", "RowAppSelectionPanel", "RowDeleteOptionsPanel")
+
+        $script:IsSingleDeviceAction = $false
+
+        [void]$Form.FindName("MultipleDevicesInfoChoiceAction").Items.Clear()
+        foreach ($choice in @("Intune ID", "EntraID ID", "Serial Number", "Device Name")) {
+            [void]$Form.FindName("MultipleDevicesInfoChoiceAction").Items.Add($choice)
+        }
+
+        $Form.FindName("MultipleDevicesAction").Content = "Multiple devices:`r`n(select a file or`r`npaste IDs`r`nbelow)"
+    }
+    elseif ($selectedAction -like "Set Primary User*") {
+        # Devices (Row3) + UPN input (Row5, repurposing the group tag textbox)
+        UnhideItems -ItemNames @("Row3ActionPanel", "Row5ActionPanel")
+        HideItems -ItemNames @("Row1ActionPanel", "Row2ActionPanel", "Row4ActionPanel", "listviewAction", "RenameOptionsPanel", "RowAppSelectionPanel", "RowDeleteOptionsPanel")
+
+        $script:IsSingleDeviceAction = $false
+
+        [void]$Form.FindName("MultipleDevicesInfoChoiceAction").Items.Clear()
+        foreach ($choice in @("Intune ID", "EntraID ID", "Serial Number", "Device Name")) {
+            [void]$Form.FindName("MultipleDevicesInfoChoiceAction").Items.Add($choice)
+        }
+
+        $Form.FindName("GroupTagLabel").Content = "New Primary User (UPN):"
+        $Form.FindName("MultipleDevicesAction").Content = "Multiple devices:`r`n(select a file or`r`npaste IDs`r`nbelow)"
+    }
+    elseif ($selectedAction -like "Set Device Category*") {
+        # Devices (Row3) + category picker (repurposing the app selection combo)
+        UnhideItems -ItemNames @("Row3ActionPanel", "RowAppSelectionPanel")
+        HideItems -ItemNames @("Row1ActionPanel", "Row2ActionPanel", "Row4ActionPanel", "Row5ActionPanel", "listviewAction", "RenameOptionsPanel", "RowDeleteOptionsPanel")
+
+        $script:IsSingleDeviceAction = $false
+
+        [void]$Form.FindName("MultipleDevicesInfoChoiceAction").Items.Clear()
+        foreach ($choice in @("Intune ID", "EntraID ID", "Serial Number", "Device Name")) {
+            [void]$Form.FindName("MultipleDevicesInfoChoiceAction").Items.Add($choice)
+        }
+
+        $Form.FindName("AndroidAppLabel").Content = "Select Category:"
+        $Form.FindName("MultipleDevicesAction").Content = "Multiple devices:`r`n(select a file or`r`npaste IDs`r`nbelow)"
+
+        # Populate the combo with the tenant's device categories
+        Initialize-DeviceCategorySelection -ComboName "AndroidAppCombo"
+    }
+    elseif ($selectedAction -like "Set Device Ownership*") {
+        # Devices (Row3) + ownership picker (repurposing the app selection combo)
+        UnhideItems -ItemNames @("Row3ActionPanel", "RowAppSelectionPanel")
+        HideItems -ItemNames @("Row1ActionPanel", "Row2ActionPanel", "Row4ActionPanel", "Row5ActionPanel", "listviewAction", "RenameOptionsPanel", "RowDeleteOptionsPanel")
+
+        $script:IsSingleDeviceAction = $false
+
+        [void]$Form.FindName("MultipleDevicesInfoChoiceAction").Items.Clear()
+        foreach ($choice in @("Intune ID", "EntraID ID", "Serial Number", "Device Name")) {
+            [void]$Form.FindName("MultipleDevicesInfoChoiceAction").Items.Add($choice)
+        }
+
+        $Form.FindName("AndroidAppLabel").Content = "New Ownership:"
+        $Form.FindName("MultipleDevicesAction").Content = "Multiple devices:`r`n(select a file or`r`npaste IDs`r`nbelow)"
+
+        $ownershipCombo = $Form.FindName("AndroidAppCombo")
+        [void]$ownershipCombo.Items.Clear()
+        foreach ($option in @(@{ Label = "Company"; Value = "company" }, @{ Label = "Personal"; Value = "personal" })) {
+            $item = New-Object System.Windows.Controls.ComboBoxItem
+            $item.Content = $option.Label
+            $item.Tag = $option.Value
+            [void]$ownershipCombo.Items.Add($item)
+        }
+    }
+    elseif ($selectedAction -like "Send Custom Notification*") {
+        # Devices (Row3) + notification title/message inputs
+        UnhideItems -ItemNames @("Row3ActionPanel", "RowNotificationPanel")
+        HideItems -ItemNames @("Row1ActionPanel", "Row2ActionPanel", "Row4ActionPanel", "Row5ActionPanel", "listviewAction", "RenameOptionsPanel", "RowAppSelectionPanel", "RowDeleteOptionsPanel")
+
+        $script:IsSingleDeviceAction = $false
+
+        [void]$Form.FindName("MultipleDevicesInfoChoiceAction").Items.Clear()
+        foreach ($choice in @("Intune ID", "EntraID ID", "Serial Number", "Device Name")) {
+            [void]$Form.FindName("MultipleDevicesInfoChoiceAction").Items.Add($choice)
+        }
+
+        $Form.FindName("MultipleDevicesAction").Content = "iOS/Android devices:`r`n(select a file or`r`npaste IDs`r`nbelow)"
+    }
+
     # Reset standard combo items if NOT Rename
     if ($selectedAction -notlike "Bulk Rename Devices*") {
          $combo = $Form.FindName("SingleOrMultipleDevicesAction")
@@ -1750,6 +1909,44 @@ function Initialize-AndroidAppSelection {
     }
 }
 
+function Initialize-DeviceCategorySelection {
+    param([string]$ComboName)
+    $combo = $Form.FindName($ComboName)
+    if ($null -eq $combo) { return }
+    [void]$combo.Items.Clear()
+
+    Invoke-AsyncOperation -ScriptBlock {
+        param($params)
+        $result = Get-IntuneDeviceCategories
+        return @{ Categories = $result.Categories; ComboName = $params.ComboName }
+    } -ArgumentList @{ ComboName = $ComboName } `
+      -BusyMessage "Loading device categories..." -Tab "Action" `
+      -ControlsToDisable @("ActionType", "PerformActionButton") `
+      -OnSuccess {
+        param($result)
+        $c = $Form.FindName($result.ComboName)
+        if ($null -eq $c) { return }
+        [void]$c.Items.Clear()
+        $categories = @($result.Categories)
+        if ($categories.Count -eq 0) {
+            $emptyItem = New-Object System.Windows.Controls.ComboBoxItem
+            $emptyItem.Content = "No device categories found in tenant"
+            $emptyItem.IsEnabled = $false
+            [void]$c.Items.Add($emptyItem)
+            return
+        }
+        foreach ($category in $categories) {
+            $item = New-Object System.Windows.Controls.ComboBoxItem
+            $item.Content = $category.DisplayName
+            $item.Tag = $category.Id
+            [void]$c.Items.Add($item)
+        }
+    } -OnError {
+        param($exception)
+        Write-AppLog -Message "Failed to populate device categories" -Level "ERROR" -Details "$($exception.Message)"
+    }
+}
+
 
 # Add tab change handler to clear descriptions when switching tabs
 $mainTabControl = $Form.FindName("MainTabControl")
@@ -1768,7 +1965,9 @@ if ($mainTabControl) {
             # Hide all dynamic panels
             HideItems -ItemNames @(
                 "Row1ReportingPanel", "Row2ReportingPanel", "Row3ReportingPanel", "Row4ReportingPanel", "Row5ReportingPanel",
-                "Row1ActionPanel", "Row2ActionPanel", "Row3ActionPanel", "Row4ActionPanel", "Row5ActionPanel"
+                "Row6ReportingPanel", "Row7ReportingPanel",
+                "Row1ActionPanel", "Row2ActionPanel", "Row3ActionPanel", "Row4ActionPanel", "Row5ActionPanel",
+                "RenameOptionsPanel", "RowAppSelectionPanel", "RowDeleteOptionsPanel", "RowNotificationPanel"
             )
             
             # Reset the dropdowns so descriptions show again on re-selection
@@ -1838,7 +2037,12 @@ $WPFPerformActionButton.Add_Click({
     # Resolve multiple-device input (file or pasted text) for action handlers
     # Only actions that use the Row3ActionPanel (multiple-device file input) need this
     $script:ActionInputResolution = $null
-    $actionsUsingMultipleDeviceInput = @("Remove Devices from Group*", "Retire Devices*", "Update Autopilot Group Tag*", "Delete Device Records*")
+    $actionsUsingMultipleDeviceInput = @(
+        "Remove Devices from Group*", "Retire Devices*", "Update Autopilot Group Tag*", "Delete Device Records*",
+        "Sync Devices*", "Restart Devices*", "Rotate BitLocker Keys*", "Rotate LAPS Password*", "Remote Lock Devices*",
+        "Defender Quick Scan*", "Defender Full Scan*", "Set Primary User*", "Set Device Category*",
+        "Set Device Ownership*", "Send Custom Notification*"
+    )
     $needsMultiDeviceInput = ($actionsUsingMultipleDeviceInput | Where-Object { $selectedAction -like $_ }).Count -gt 0
     # Also resolve for Import (if multiple mode) and Rename (if file mode) and Remove Android App (if multiple mode)
     if ($needsMultiDeviceInput -or 
@@ -2571,6 +2775,296 @@ $WPFPerformActionButton.Add_Click({
             [System.Windows.MessageBox]::Show("Failed to delete device records: $($exception.Message)", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
         }
         return
+    } elseif ($selectedAction -like "Sync Devices*" -or $selectedAction -like "Restart Devices*" -or
+              $selectedAction -like "Rotate BitLocker Keys*" -or $selectedAction -like "Rotate LAPS Password*" -or
+              $selectedAction -like "Remote Lock Devices*" -or $selectedAction -like "Defender Quick Scan*" -or
+              $selectedAction -like "Defender Full Scan*") {
+        # Bulk remote actions - all share the same generic engine
+        $bulkActionMap = @(
+            @{ Pattern = "Sync Devices*";          ActionName = "Sync";                     Verb = "sync" },
+            @{ Pattern = "Restart Devices*";       ActionName = "Restart";                  Verb = "RESTART" },
+            @{ Pattern = "Rotate BitLocker Keys*"; ActionName = "RotateBitLockerKeys";      Verb = "rotate the BitLocker recovery keys on" },
+            @{ Pattern = "Rotate LAPS Password*";  ActionName = "RotateLocalAdminPassword"; Verb = "rotate the LAPS password on" },
+            @{ Pattern = "Remote Lock Devices*";   ActionName = "RemoteLock";               Verb = "remotely LOCK" },
+            @{ Pattern = "Defender Quick Scan*";   ActionName = "DefenderQuickScan";        Verb = "run a Defender quick scan on" },
+            @{ Pattern = "Defender Full Scan*";    ActionName = "DefenderFullScan";         Verb = "run a Defender full scan on" }
+        )
+        $matchedAction = $bulkActionMap | Where-Object { $selectedAction -like $_.Pattern } | Select-Object -First 1
+
+        $filePath = $script:ActionInputResolution.Path
+        $idType = $WPFMultipleDevicesInfoChoiceAction.Text
+
+        if ([string]::IsNullOrWhiteSpace($filePath)) {
+            [System.Windows.MessageBox]::Show("Please select a file or paste device IDs below.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+        if ([string]::IsNullOrWhiteSpace($idType)) {
+            [System.Windows.MessageBox]::Show("Please select a Device ID type.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+
+        $deviceCount = (Get-Content $filePath -Encoding UTF8 -ErrorAction SilentlyContinue | Where-Object { $_ -match '\S' } | Measure-Object).Count
+        $confirmResult = [System.Windows.MessageBox]::Show("You are about to $($matchedAction.Verb) $deviceCount device(s).`r`n`r`nDo you want to continue?", "Confirm $selectedAction", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+        if ($confirmResult -eq [System.Windows.MessageBoxResult]::No) {
+            Write-AppLog -Message "$selectedAction cancelled by user" -Level "USER"
+            return
+        }
+
+        Write-AppLog -Message "Executing $selectedAction (async)" -Level "ACTION" -Details "File: $filePath, ID Type: $idType, Device Count: $deviceCount"
+        $script:AsyncBulkActionParams = @{ FilePath = $filePath; IdType = $idType; ActionName = $matchedAction.ActionName; DisplayName = $selectedAction }
+
+        Invoke-AsyncOperation -ScriptBlock {
+            param($params)
+            return Invoke-IntuneBulkDeviceAction -FilePath $params.FilePath -DesiredID $params.IdType -ActionName $params.ActionName
+        } -ArgumentList $script:AsyncBulkActionParams `
+          -BusyMessage "Sending commands to devices..." -Tab "Action" `
+          -ControlsToDisable @("ActionType", "PerformActionButton", "MultipleDevicesInfoBoxAction") `
+          -OnSuccess {
+            param($returnedData)
+            if ($null -ne $returnedData) {
+                $Headers = @("DeviceID", "DeviceName", "OS", "LastSync", "Status", "Message")
+                UnhideItems -ItemNames @("listviewAction", "ExportActionButton", "CopyActionButton")
+                FillDataListView -ListView $WPFlistviewAction -Headers $Headers -Data $returnedData
+
+                $sentCount = @($returnedData["Status"] | Where-Object { $_ -eq "Sent" }).Count
+                $errorCount = @($returnedData["Status"] | Where-Object { $_ -ne "Sent" }).Count
+
+                Write-AppLogResults -Results $returnedData -Operation $script:AsyncBulkActionParams.DisplayName
+                Write-AppLog -Message "$($script:AsyncBulkActionParams.DisplayName) completed" -Level "ACTION" -Details "Sent: $sentCount, Errors: $errorCount"
+
+                [System.Windows.MessageBox]::Show("Operation completed.`r`n`r`nCommands sent: $sentCount`r`nNot found / errors: $errorCount", "Action Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            }
+        } -OnError {
+            param($exception)
+            Write-AppLog -Message "$($script:AsyncBulkActionParams.DisplayName) failed" -Level "ERROR" -Details $exception.Message
+            [System.Windows.MessageBox]::Show("Action failed: $($exception.Message)", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        }
+        return
+    } elseif ($selectedAction -like "Set Primary User*") {
+        $filePath = $script:ActionInputResolution.Path
+        $idType = $WPFMultipleDevicesInfoChoiceAction.Text
+        $newUserUpn = $WPFGroupTagBox.Text.Trim()
+
+        if ([string]::IsNullOrWhiteSpace($filePath)) {
+            [System.Windows.MessageBox]::Show("Please select a file or paste device IDs below.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+        if ([string]::IsNullOrWhiteSpace($idType)) {
+            [System.Windows.MessageBox]::Show("Please select a Device ID type.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+        if ([string]::IsNullOrWhiteSpace($newUserUpn) -or $newUserUpn -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$') {
+            [System.Windows.MessageBox]::Show("Please enter a valid user UPN (e.g. user@contoso.com).", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+
+        $deviceCount = (Get-Content $filePath -Encoding UTF8 -ErrorAction SilentlyContinue | Where-Object { $_ -match '\S' } | Measure-Object).Count
+        $confirmResult = [System.Windows.MessageBox]::Show("You are about to set the primary user to:`r`n`r`n$newUserUpn`r`n`r`non $deviceCount device(s).`r`n`r`nDo you want to continue?", "Confirm Set Primary User", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+        if ($confirmResult -eq [System.Windows.MessageBoxResult]::No) {
+            Write-AppLog -Message "Set Primary User cancelled by user" -Level "USER"
+            return
+        }
+
+        Write-AppLog -Message "Executing Set Primary User (async)" -Level "ACTION" -Details "File: $filePath, ID Type: $idType, User: $newUserUpn, Device Count: $deviceCount"
+        $script:AsyncPrimaryUserParams = @{ FilePath = $filePath; IdType = $idType; UserPrincipalName = $newUserUpn }
+
+        Invoke-AsyncOperation -ScriptBlock {
+            param($params)
+            return Set-IntuneDevicePrimaryUser -FilePath $params.FilePath -DesiredID $params.IdType -UserPrincipalName $params.UserPrincipalName
+        } -ArgumentList $script:AsyncPrimaryUserParams `
+          -BusyMessage "Setting primary user on devices..." -Tab "Action" `
+          -ControlsToDisable @("ActionType", "PerformActionButton", "MultipleDevicesInfoBoxAction", "GroupTagBox") `
+          -OnSuccess {
+            param($returnedData)
+            if ($null -ne $returnedData) {
+                $Headers = @("DeviceID", "DeviceName", "PreviousUser", "NewUser", "Status", "Message")
+                UnhideItems -ItemNames @("listviewAction", "ExportActionButton", "CopyActionButton")
+                FillDataListView -ListView $WPFlistviewAction -Headers $Headers -Data $returnedData
+
+                $updatedCount = @($returnedData["Status"] | Where-Object { $_ -eq "Updated" }).Count
+                $errorCount = @($returnedData["Status"] | Where-Object { $_ -ne "Updated" }).Count
+
+                Write-AppLogResults -Results $returnedData -Operation "Set Primary User"
+                Write-AppLog -Message "Set Primary User completed" -Level "ACTION" -Details "Updated: $updatedCount, Errors: $errorCount"
+
+                [System.Windows.MessageBox]::Show("Set Primary User completed.`r`n`r`nUpdated: $updatedCount`r`nNot found / errors: $errorCount", "Action Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            }
+        } -OnError {
+            param($exception)
+            Write-AppLog -Message "Set Primary User failed" -Level "ERROR" -Details $exception.Message
+            [System.Windows.MessageBox]::Show("Failed to set primary user: $($exception.Message)", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        }
+        return
+    } elseif ($selectedAction -like "Set Device Category*") {
+        $filePath = $script:ActionInputResolution.Path
+        $idType = $WPFMultipleDevicesInfoChoiceAction.Text
+        $selectedCategory = $Form.FindName("AndroidAppCombo").SelectedItem
+
+        if ([string]::IsNullOrWhiteSpace($filePath)) {
+            [System.Windows.MessageBox]::Show("Please select a file or paste device IDs below.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+        if ([string]::IsNullOrWhiteSpace($idType)) {
+            [System.Windows.MessageBox]::Show("Please select a Device ID type.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+        if ($null -eq $selectedCategory -or [string]::IsNullOrWhiteSpace("$($selectedCategory.Tag)")) {
+            [System.Windows.MessageBox]::Show("Please select a device category.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+
+        $categoryName = "$($selectedCategory.Content)"
+        $categoryId = "$($selectedCategory.Tag)"
+        $deviceCount = (Get-Content $filePath -Encoding UTF8 -ErrorAction SilentlyContinue | Where-Object { $_ -match '\S' } | Measure-Object).Count
+        $confirmResult = [System.Windows.MessageBox]::Show("You are about to assign the category:`r`n`r`n$categoryName`r`n`r`nto $deviceCount device(s).`r`n`r`nDo you want to continue?", "Confirm Set Device Category", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+        if ($confirmResult -eq [System.Windows.MessageBoxResult]::No) {
+            Write-AppLog -Message "Set Device Category cancelled by user" -Level "USER"
+            return
+        }
+
+        Write-AppLog -Message "Executing Set Device Category (async)" -Level "ACTION" -Details "File: $filePath, ID Type: $idType, Category: $categoryName, Device Count: $deviceCount"
+        $script:AsyncCategoryParams = @{ FilePath = $filePath; IdType = $idType; CategoryId = $categoryId; CategoryName = $categoryName }
+
+        Invoke-AsyncOperation -ScriptBlock {
+            param($params)
+            return Set-IntuneDeviceCategory -FilePath $params.FilePath -DesiredID $params.IdType -CategoryId $params.CategoryId -CategoryName $params.CategoryName
+        } -ArgumentList $script:AsyncCategoryParams `
+          -BusyMessage "Assigning device category..." -Tab "Action" `
+          -ControlsToDisable @("ActionType", "PerformActionButton", "MultipleDevicesInfoBoxAction") `
+          -OnSuccess {
+            param($returnedData)
+            if ($null -ne $returnedData) {
+                $Headers = @("DeviceID", "DeviceName", "Category", "Status", "Message")
+                UnhideItems -ItemNames @("listviewAction", "ExportActionButton", "CopyActionButton")
+                FillDataListView -ListView $WPFlistviewAction -Headers $Headers -Data $returnedData
+
+                $updatedCount = @($returnedData["Status"] | Where-Object { $_ -eq "Updated" }).Count
+                $errorCount = @($returnedData["Status"] | Where-Object { $_ -ne "Updated" }).Count
+
+                Write-AppLogResults -Results $returnedData -Operation "Set Device Category"
+                Write-AppLog -Message "Set Device Category completed" -Level "ACTION" -Details "Updated: $updatedCount, Errors: $errorCount"
+
+                [System.Windows.MessageBox]::Show("Set Device Category completed.`r`n`r`nUpdated: $updatedCount`r`nNot found / errors: $errorCount", "Action Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            }
+        } -OnError {
+            param($exception)
+            Write-AppLog -Message "Set Device Category failed" -Level "ERROR" -Details $exception.Message
+            [System.Windows.MessageBox]::Show("Failed to set device category: $($exception.Message)", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        }
+        return
+    } elseif ($selectedAction -like "Set Device Ownership*") {
+        $filePath = $script:ActionInputResolution.Path
+        $idType = $WPFMultipleDevicesInfoChoiceAction.Text
+        $selectedOwnership = $Form.FindName("AndroidAppCombo").SelectedItem
+
+        if ([string]::IsNullOrWhiteSpace($filePath)) {
+            [System.Windows.MessageBox]::Show("Please select a file or paste device IDs below.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+        if ([string]::IsNullOrWhiteSpace($idType)) {
+            [System.Windows.MessageBox]::Show("Please select a Device ID type.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+        if ($null -eq $selectedOwnership -or [string]::IsNullOrWhiteSpace("$($selectedOwnership.Tag)")) {
+            [System.Windows.MessageBox]::Show("Please select the new ownership type.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+
+        $ownershipValue = "$($selectedOwnership.Tag)"
+        $ownershipLabel = "$($selectedOwnership.Content)"
+        $deviceCount = (Get-Content $filePath -Encoding UTF8 -ErrorAction SilentlyContinue | Where-Object { $_ -match '\S' } | Measure-Object).Count
+        $confirmResult = [System.Windows.MessageBox]::Show("You are about to change device ownership to:`r`n`r`n$ownershipLabel`r`n`r`non $deviceCount device(s).`r`n`r`nOwnership affects available management actions and privacy behavior.`r`n`r`nDo you want to continue?", "Confirm Set Device Ownership", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+        if ($confirmResult -eq [System.Windows.MessageBoxResult]::No) {
+            Write-AppLog -Message "Set Device Ownership cancelled by user" -Level "USER"
+            return
+        }
+
+        Write-AppLog -Message "Executing Set Device Ownership (async)" -Level "ACTION" -Details "File: $filePath, ID Type: $idType, Ownership: $ownershipValue, Device Count: $deviceCount"
+        $script:AsyncOwnershipParams = @{ FilePath = $filePath; IdType = $idType; Ownership = $ownershipValue }
+
+        Invoke-AsyncOperation -ScriptBlock {
+            param($params)
+            return Set-IntuneDeviceOwnership -FilePath $params.FilePath -DesiredID $params.IdType -Ownership $params.Ownership
+        } -ArgumentList $script:AsyncOwnershipParams `
+          -BusyMessage "Updating device ownership..." -Tab "Action" `
+          -ControlsToDisable @("ActionType", "PerformActionButton", "MultipleDevicesInfoBoxAction") `
+          -OnSuccess {
+            param($returnedData)
+            if ($null -ne $returnedData) {
+                $Headers = @("DeviceID", "DeviceName", "PreviousOwnership", "NewOwnership", "Status", "Message")
+                UnhideItems -ItemNames @("listviewAction", "ExportActionButton", "CopyActionButton")
+                FillDataListView -ListView $WPFlistviewAction -Headers $Headers -Data $returnedData
+
+                $updatedCount = @($returnedData["Status"] | Where-Object { $_ -eq "Updated" }).Count
+                $errorCount = @($returnedData["Status"] | Where-Object { $_ -ne "Updated" }).Count
+
+                Write-AppLogResults -Results $returnedData -Operation "Set Device Ownership"
+                Write-AppLog -Message "Set Device Ownership completed" -Level "ACTION" -Details "Updated: $updatedCount, Errors: $errorCount"
+
+                [System.Windows.MessageBox]::Show("Set Device Ownership completed.`r`n`r`nUpdated: $updatedCount`r`nNot found / errors: $errorCount", "Action Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            }
+        } -OnError {
+            param($exception)
+            Write-AppLog -Message "Set Device Ownership failed" -Level "ERROR" -Details $exception.Message
+            [System.Windows.MessageBox]::Show("Failed to set device ownership: $($exception.Message)", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        }
+        return
+    } elseif ($selectedAction -like "Send Custom Notification*") {
+        $filePath = $script:ActionInputResolution.Path
+        $idType = $WPFMultipleDevicesInfoChoiceAction.Text
+        $notificationTitle = $Form.FindName("NotificationTitleBox").Text.Trim()
+        $notificationMessage = $Form.FindName("NotificationMessageBox").Text.Trim()
+
+        if ([string]::IsNullOrWhiteSpace($filePath)) {
+            [System.Windows.MessageBox]::Show("Please select a file or paste device IDs below.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+        if ([string]::IsNullOrWhiteSpace($idType)) {
+            [System.Windows.MessageBox]::Show("Please select a Device ID type.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+        if ([string]::IsNullOrWhiteSpace($notificationTitle) -or [string]::IsNullOrWhiteSpace($notificationMessage)) {
+            [System.Windows.MessageBox]::Show("Please enter both a notification title and a message.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            return
+        }
+
+        $deviceCount = (Get-Content $filePath -Encoding UTF8 -ErrorAction SilentlyContinue | Where-Object { $_ -match '\S' } | Measure-Object).Count
+        $confirmResult = [System.Windows.MessageBox]::Show("You are about to send this notification to $deviceCount device(s):`r`n`r`nTitle: $notificationTitle`r`nMessage: $notificationMessage`r`n`r`nNote: only iOS/Android devices with the Company Portal app will show it.`r`n`r`nDo you want to continue?", "Confirm Send Notification", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+        if ($confirmResult -eq [System.Windows.MessageBoxResult]::No) {
+            Write-AppLog -Message "Send Custom Notification cancelled by user" -Level "USER"
+            return
+        }
+
+        Write-AppLog -Message "Executing Send Custom Notification (async)" -Level "ACTION" -Details "File: $filePath, ID Type: $idType, Title: $notificationTitle, Device Count: $deviceCount"
+        $script:AsyncNotificationParams = @{ FilePath = $filePath; IdType = $idType; Title = $notificationTitle; Message = $notificationMessage }
+
+        Invoke-AsyncOperation -ScriptBlock {
+            param($params)
+            return Send-IntuneCustomNotification -FilePath $params.FilePath -DesiredID $params.IdType -Title $params.Title -Message $params.Message
+        } -ArgumentList $script:AsyncNotificationParams `
+          -BusyMessage "Sending notifications..." -Tab "Action" `
+          -ControlsToDisable @("ActionType", "PerformActionButton", "MultipleDevicesInfoBoxAction", "NotificationTitleBox", "NotificationMessageBox") `
+          -OnSuccess {
+            param($returnedData)
+            if ($null -ne $returnedData) {
+                $Headers = @("DeviceID", "DeviceName", "OS", "Status", "Message")
+                UnhideItems -ItemNames @("listviewAction", "ExportActionButton", "CopyActionButton")
+                FillDataListView -ListView $WPFlistviewAction -Headers $Headers -Data $returnedData
+
+                $sentCount = @($returnedData["Status"] | Where-Object { $_ -eq "Sent" }).Count
+                $errorCount = @($returnedData["Status"] | Where-Object { $_ -ne "Sent" }).Count
+
+                Write-AppLogResults -Results $returnedData -Operation "Send Custom Notification"
+                Write-AppLog -Message "Send Custom Notification completed" -Level "ACTION" -Details "Sent: $sentCount, Errors: $errorCount"
+
+                [System.Windows.MessageBox]::Show("Send Custom Notification completed.`r`n`r`nSent: $sentCount`r`nNot found / errors: $errorCount", "Action Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            }
+        } -OnError {
+            param($exception)
+            Write-AppLog -Message "Send Custom Notification failed" -Level "ERROR" -Details $exception.Message
+            [System.Windows.MessageBox]::Show("Failed to send notifications: $($exception.Message)", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        }
+        return
     }
 })
 
@@ -2631,12 +3125,34 @@ $WPFGenerateReportButton.Add_Click({
     }
     
     # Define which reports use which input modes
-    $reportsWithNoInput = @("Export TPM/Hardware Info for All Devices - Export all TPM/BIOS")
+    $reportsWithNoInput = @(
+        "Export TPM/Hardware Info for All Devices - Export all TPM/BIOS",
+        "Get Duplicate Device Records - Same serial, multiple records",
+        "Get Primary User Mismatch - Primary vs last logged-on"
+    )
     $reportsWithSingleInputOnly = @("Get Group Assignments - Group memberships")
     $reportsWithFileInputOnly = @("Get Autopilot Info - Autopilot registration")
     $reportsWithPlatformOnly = @("Get OS Distribution - OS version counts")
-    $reportsWithPlatformAndApp = @("Get App Version Distribution - App version counts")
+    $reportsWithPlatformAndApp = @(
+        "Get App Version Distribution - App version counts",
+        "Get App Install Status - Per-device install state"
+    )
     $reportsWithGroupInput = @("Get Group Members Intune Info - Group devices info")
+    $reportsWithThresholdInput = @(
+        "Get Stale Devices - No check-in for X days",
+        "Get Low Disk Space Devices - Free space below X GB"
+    )
+
+    # Threshold reports: validate the numeric input up front
+    if ($selectedReportType -in $reportsWithThresholdInput) {
+        $thresholdText = $Form.FindName("PolicyIDBox").Text.Trim()
+        $thresholdValue = 0.0
+        if (-not [double]::TryParse($thresholdText, [ref]$thresholdValue) -or $thresholdValue -le 0) {
+            Write-AppLog -Message "Report generation attempted with invalid threshold" -Level "WARNING" -Details "Value: '$thresholdText'"
+            [System.Windows.MessageBox]::Show("Please enter a positive number for the threshold.", "Input Required", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+            return
+        }
+    }
     
     # Validate input fields based on report type
     if ($selectedReportType -in $reportsWithGroupInput) {
@@ -3733,6 +4249,169 @@ $WPFGenerateReportButton.Add_Click({
             Write-Error "Failed to retrieve group members: $($exception.Message)"
             Write-AppLog -Message "Group Members Intune Info report failed" -Level "ERROR" -Details "$($exception.Message)"
             [System.Windows.MessageBox]::Show("Failed to retrieve group members: $($exception.Message)", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        }
+        return
+    }
+    elseif ($selectedReportType -like "Get Stale Devices*") {
+        $daysThreshold = [int][double]::Parse($Form.FindName("PolicyIDBox").Text.Trim())
+        Write-AppLog -Message "Executing Get Stale Devices (async)" -Level "REPORT" -Details "Threshold: $daysThreshold days"
+        $script:AsyncStaleParams = @{ DaysThreshold = $daysThreshold }
+
+        Invoke-AsyncOperation -ScriptBlock {
+            param($params)
+            return Get-StaleIntuneDevices -DaysThreshold $params.DaysThreshold
+        } -ArgumentList $script:AsyncStaleParams `
+          -BusyMessage "Scanning all managed devices for stale check-ins..." -Tab "Reporting" `
+          -ControlsToDisable @("GenerateReportButton", "ReportType") `
+          -OnSuccess {
+            param($returnedData)
+            if ($null -eq $returnedData) { return }
+            Write-AppLog -Message "Get Stale Devices completed" -Level "REPORT" -Details "Stale: $($returnedData.StaleCount) of $($returnedData.TotalCount)"
+            if ($returnedData.StaleCount -eq 0) {
+                HideItems -ItemNames @("listview")
+                $WPFResultsTextBox.Text = "No stale devices found - all $($returnedData.TotalCount) managed devices checked in within the last $($returnedData.DaysThreshold) days."
+                UnhideItems -ItemNames @("ResultsTextBox")
+                return
+            }
+            $Headers = @("DeviceName", "SerialNumber", "IntuneID", "PrimaryUser", "OS", "OSVersion", "LastSync", "DaysSinceSync", "Compliance", "Ownership")
+            UnhideItems -ItemNames @("listview", "ExportReportButton", "CopyReportButton")
+            HideItems -ItemNames @("ResultsTextBox")
+            FillDataListView -ListView $WPFlistview -Headers $Headers -Data $returnedData.Results
+            [System.Windows.MessageBox]::Show("Stale devices report complete.`r`n`r`nStale devices (no check-in for $($returnedData.DaysThreshold)+ days): $($returnedData.StaleCount)`r`nTotal managed devices: $($returnedData.TotalCount)`r`n`r`nTip: Export to CSV and feed the Intune IDs back into the Retire or Delete actions for cleanup.", "Report Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        } -OnError {
+            param($exception)
+            Write-AppLog -Message "Get Stale Devices failed" -Level "ERROR" -Details $exception.Message
+            [System.Windows.MessageBox]::Show("Failed to run stale devices report: $($exception.Message)", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        }
+        return
+    }
+    elseif ($selectedReportType -like "Get Low Disk Space Devices*") {
+        $minFreeGB = [double]::Parse($Form.FindName("PolicyIDBox").Text.Trim())
+        Write-AppLog -Message "Executing Get Low Disk Space Devices (async)" -Level "REPORT" -Details "Threshold: $minFreeGB GB"
+        $script:AsyncLowDiskParams = @{ MinFreeGB = $minFreeGB }
+
+        Invoke-AsyncOperation -ScriptBlock {
+            param($params)
+            return Get-LowDiskSpaceDevices -MinFreeGB $params.MinFreeGB
+        } -ArgumentList $script:AsyncLowDiskParams `
+          -BusyMessage "Scanning all managed devices for low disk space..." -Tab "Reporting" `
+          -ControlsToDisable @("GenerateReportButton", "ReportType") `
+          -OnSuccess {
+            param($returnedData)
+            if ($null -eq $returnedData) { return }
+            Write-AppLog -Message "Get Low Disk Space Devices completed" -Level "REPORT" -Details "Low disk: $($returnedData.LowDiskCount) of $($returnedData.TotalCount)"
+            if ($returnedData.LowDiskCount -eq 0) {
+                HideItems -ItemNames @("listview")
+                $WPFResultsTextBox.Text = "No devices found below $($returnedData.MinFreeGB) GB free space (of $($returnedData.TotalCount) managed devices with storage data)."
+                UnhideItems -ItemNames @("ResultsTextBox")
+                return
+            }
+            $Headers = @("DeviceName", "SerialNumber", "PrimaryUser", "OS", "OSVersion", "FreeGB", "TotalGB", "PercentFree", "LastSync")
+            UnhideItems -ItemNames @("listview", "ExportReportButton", "CopyReportButton")
+            HideItems -ItemNames @("ResultsTextBox")
+            FillDataListView -ListView $WPFlistview -Headers $Headers -Data $returnedData.Results
+            [System.Windows.MessageBox]::Show("Low disk space report complete.`r`n`r`nDevices below $($returnedData.MinFreeGB) GB free: $($returnedData.LowDiskCount)`r`nTotal managed devices: $($returnedData.TotalCount)", "Report Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        } -OnError {
+            param($exception)
+            Write-AppLog -Message "Get Low Disk Space Devices failed" -Level "ERROR" -Details $exception.Message
+            [System.Windows.MessageBox]::Show("Failed to run low disk space report: $($exception.Message)", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        }
+        return
+    }
+    elseif ($selectedReportType -like "Get Duplicate Device Records*") {
+        Write-AppLog -Message "Executing Get Duplicate Device Records (async)" -Level "REPORT"
+
+        Invoke-AsyncOperation -ScriptBlock {
+            param($params)
+            return Get-DuplicateIntuneDevices
+        } -ArgumentList @{} `
+          -BusyMessage "Scanning all managed devices for duplicate records..." -Tab "Reporting" `
+          -ControlsToDisable @("GenerateReportButton", "ReportType") `
+          -OnSuccess {
+            param($returnedData)
+            if ($null -eq $returnedData) { return }
+            Write-AppLog -Message "Get Duplicate Device Records completed" -Level "REPORT" -Details "Duplicate serials: $($returnedData.DuplicateSerialCount)"
+            if ($returnedData.DuplicateSerialCount -eq 0) {
+                HideItems -ItemNames @("listview")
+                $WPFResultsTextBox.Text = "No duplicate device records found ($($returnedData.TotalCount) managed devices scanned)."
+                UnhideItems -ItemNames @("ResultsTextBox")
+                return
+            }
+            $Headers = @("SerialNumber", "DeviceName", "IntuneID", "OS", "PrimaryUser", "EnrolledDate", "LastSync", "Suggestion")
+            UnhideItems -ItemNames @("listview", "ExportReportButton", "CopyReportButton")
+            HideItems -ItemNames @("ResultsTextBox")
+            FillDataListView -ListView $WPFlistview -Headers $Headers -Data $returnedData.Results
+            [System.Windows.MessageBox]::Show("Duplicate device records report complete.`r`n`r`nSerials with duplicates: $($returnedData.DuplicateSerialCount)`r`nTotal duplicate records: $($returnedData.DuplicateRecordCount)`r`nTotal managed devices: $($returnedData.TotalCount)`r`n`r`nTip: Export to CSV, review the 'Duplicate (older)' rows, and feed their Intune IDs into the Delete Device Records action (WhatIf first!).", "Report Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        } -OnError {
+            param($exception)
+            Write-AppLog -Message "Get Duplicate Device Records failed" -Level "ERROR" -Details $exception.Message
+            [System.Windows.MessageBox]::Show("Failed to run duplicate records report: $($exception.Message)", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        }
+        return
+    }
+    elseif ($selectedReportType -like "Get Primary User Mismatch*") {
+        Write-AppLog -Message "Executing Get Primary User Mismatch (async)" -Level "REPORT"
+
+        Invoke-AsyncOperation -ScriptBlock {
+            param($params)
+            return Get-PrimaryUserMismatchReport
+        } -ArgumentList @{} `
+          -BusyMessage "Comparing primary users with last logged-on users (this can take a while)..." -Tab "Reporting" `
+          -ControlsToDisable @("GenerateReportButton", "ReportType") `
+          -OnSuccess {
+            param($returnedData)
+            if ($null -eq $returnedData) { return }
+            Write-AppLog -Message "Get Primary User Mismatch completed" -Level "REPORT" -Details "Mismatches: $($returnedData.MismatchCount) of $($returnedData.CheckedCount) checked"
+            if ($returnedData.MismatchCount -eq 0) {
+                HideItems -ItemNames @("listview")
+                $WPFResultsTextBox.Text = "No mismatches found - the primary user matches the last logged-on user on all $($returnedData.CheckedCount) devices with logon data ($($returnedData.TotalCount) devices total)."
+                UnhideItems -ItemNames @("ResultsTextBox")
+                return
+            }
+            $Headers = @("DeviceName", "IntuneID", "PrimaryUser", "LastLoggedOnUser", "LastLogOn", "OS", "LastSync")
+            UnhideItems -ItemNames @("listview", "ExportReportButton", "CopyReportButton")
+            HideItems -ItemNames @("ResultsTextBox")
+            FillDataListView -ListView $WPFlistview -Headers $Headers -Data $returnedData.Results
+            [System.Windows.MessageBox]::Show("Primary user mismatch report complete.`r`n`r`nMismatches: $($returnedData.MismatchCount)`r`nDevices checked (with logon data): $($returnedData.CheckedCount)`r`nTotal managed devices: $($returnedData.TotalCount)`r`n`r`nTip: Export to CSV and use the 'Set Primary User' action to fix assignments in bulk.", "Report Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        } -OnError {
+            param($exception)
+            Write-AppLog -Message "Get Primary User Mismatch failed" -Level "ERROR" -Details $exception.Message
+            [System.Windows.MessageBox]::Show("Failed to run primary user mismatch report: $($exception.Message)", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        }
+        return
+    }
+    elseif ($selectedReportType -like "Get App Install Status*") {
+        $selectedApp = $Form.FindName("AppSelectCombo").SelectedItem
+        $appName = "$($selectedApp.Content)"
+        $appId = "$($selectedApp.Tag)"
+        Write-AppLog -Message "Executing Get App Install Status (async)" -Level "REPORT" -Details "App: $appName ($appId)"
+        $script:AsyncAppStatusParams = @{ AppId = $appId; AppName = $appName }
+
+        Invoke-AsyncOperation -ScriptBlock {
+            param($params)
+            return Get-AppInstallStatusReport -AppId $params.AppId -AppName $params.AppName
+        } -ArgumentList $script:AsyncAppStatusParams `
+          -BusyMessage "Fetching install status for '$appName'..." -Tab "Reporting" `
+          -ControlsToDisable @("GenerateReportButton", "ReportType") `
+          -OnSuccess {
+            param($returnedData)
+            if ($null -eq $returnedData) { return }
+            Write-AppLog -Message "Get App Install Status completed" -Level "REPORT" -Details "App: $($returnedData.AppName), Records: $($returnedData.TotalCount)"
+            if ($returnedData.TotalCount -eq 0) {
+                HideItems -ItemNames @("listview")
+                $WPFResultsTextBox.Text = "No install status records found for '$($returnedData.AppName)'.`r`n`r`nThe app may not be assigned to any devices, or Intune has not reported status yet."
+                UnhideItems -ItemNames @("ResultsTextBox")
+                return
+            }
+            $Headers = @("DeviceName", "UserPrincipalName", "Platform", "AppVersion", "InstallState", "InstallStateDetail", "ErrorCode", "LastModified")
+            UnhideItems -ItemNames @("listview", "ExportReportButton", "CopyReportButton")
+            HideItems -ItemNames @("ResultsTextBox")
+            FillDataListView -ListView $WPFlistview -Headers $Headers -Data $returnedData.Results
+            [System.Windows.MessageBox]::Show("App install status for:`r`n$($returnedData.AppName)`r`n`r`nInstalled: $($returnedData.InstalledCount)`r`nFailed: $($returnedData.FailedCount)`r`nTotal status records: $($returnedData.TotalCount)", "Report Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        } -OnError {
+            param($exception)
+            Write-AppLog -Message "Get App Install Status failed" -Level "ERROR" -Details $exception.Message
+            [System.Windows.MessageBox]::Show("Failed to run app install status report: $($exception.Message)", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
         }
         return
     }

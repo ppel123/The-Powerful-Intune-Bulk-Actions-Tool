@@ -20,7 +20,9 @@ $script:RequiredGraphScopes = @(
     "DeviceManagementServiceConfig.Read.All",       # Endpoint security policies, Autopilot
     "Device.Read.All",                               # Device information for group import
     "GroupMember.ReadWrite.All",                     # Add/remove devices from groups
-    "DeviceManagementManagedDevices.ReadWrite.All"  # Retire devices, Autopilot group tag updates
+    "DeviceManagementManagedDevices.ReadWrite.All", # Retire devices, Autopilot group tag updates, primary user/category/ownership
+    "DeviceManagementManagedDevices.PrivilegedOperations.All", # Sync, restart, key rotations, remote lock, Defender scans
+    "User.Read.All"                                  # Resolve user UPNs (primary user assignment / mismatch report)
 )
 
 function Connect-ToMGGraph {
@@ -2992,6 +2994,805 @@ function Invoke-AndroidAppChangeAssignments {
 }
 #endregion ==================== ANDROID APP REINSTALL ====================
 
+#region ==================== BULK DEVICE REMOTE ACTIONS ====================
+
+<#
+.SYNOPSIS
+    Executes a non-destructive Intune remote action against a list of devices.
+.DESCRIPTION
+    Generic engine for simple per-device POST actions (sync, reboot, key rotations,
+    remote lock, Defender scans). Reads identifiers from a file, resolves each to an
+    Intune device, sends the action, and returns a results hashtable for the UI grid.
+.PARAMETER FilePath
+    Path to the file containing device identifiers (one per line).
+.PARAMETER DesiredID
+    The identifier type: "EntraID ID", "Intune ID", "Device Name", or "Serial Number".
+.PARAMETER ActionName
+    Which remote action to send.
+#>
+function Invoke-IntuneBulkDeviceAction {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("EntraID ID", "Intune ID", "Device Name", "Serial Number")]
+        [string]$DesiredID,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("Sync", "Restart", "RotateBitLockerKeys", "RotateLocalAdminPassword", "RemoteLock", "DefenderQuickScan", "DefenderFullScan")]
+        [string]$ActionName
+    )
+
+    # Map the friendly action name to the Graph endpoint segment and optional body
+    $actionMap = @{
+        "Sync"                     = @{ Endpoint = "syncDevice";               Body = $null;                  Verb = "Sync" }
+        "Restart"                  = @{ Endpoint = "rebootNow";                Body = $null;                  Verb = "Restart" }
+        "RotateBitLockerKeys"      = @{ Endpoint = "rotateBitLockerKeys";      Body = $null;                  Verb = "BitLocker key rotation" }
+        "RotateLocalAdminPassword" = @{ Endpoint = "rotateLocalAdminPassword"; Body = $null;                  Verb = "LAPS password rotation" }
+        "RemoteLock"               = @{ Endpoint = "remoteLock";               Body = $null;                  Verb = "Remote lock" }
+        "DefenderQuickScan"        = @{ Endpoint = "windowsDefenderScan";      Body = @{ quickScan = $true }; Verb = "Defender quick scan" }
+        "DefenderFullScan"         = @{ Endpoint = "windowsDefenderScan";      Body = @{ quickScan = $false }; Verb = "Defender full scan" }
+    }
+    $action = $actionMap[$ActionName]
+
+    Write-Host "Starting bulk '$($action.Verb)' operation..." -ForegroundColor Cyan
+    Write-AppLog -Message "Bulk device action starting" -Level "DEBUG" -Details "Action: $ActionName, File: $FilePath, IDType: $DesiredID"
+
+    if (-not (Test-Path $FilePath)) {
+        Write-Error "File not found: $FilePath"
+        return $null
+    }
+
+    $deviceIDs = @(Get-Content -Path $FilePath -Encoding UTF8 | Where-Object { $_ -match '\S' })
+    $totalDevices = $deviceIDs.Count
+    Write-Host "Total devices to process: $totalDevices" -ForegroundColor Yellow
+
+    $results = New-ResultsHashtable -Keys @("DeviceID", "DeviceName", "OS", "LastSync", "Status", "Message")
+    $counter = 0
+
+    foreach ($deviceID in $deviceIDs) {
+        $deviceID = $deviceID.Trim()
+        $counter++
+        Write-Host "#$counter of ${totalDevices}: $deviceID" -ForegroundColor Yellow
+
+        try {
+            $deviceInfo = Resolve-DeviceIdentifier -DeviceIdentifier $deviceID -IDType $DesiredID -SelectProperties @("Id", "DeviceName", "OperatingSystem", "LastSyncDateTime")
+
+            if ($null -eq $deviceInfo) {
+                Add-ResultToHashtable -Results $results -SingleResult @{
+                    DeviceID = $deviceID; DeviceName = "Not Found"; OS = "N/A"; LastSync = "N/A"
+                    Status = "Not Found"; Message = "Device not found in Intune"
+                }
+                continue
+            }
+
+            $uri = "https://graph.microsoft.com/beta/deviceManagement/managedDevices/$($deviceInfo.Id)/$($action.Endpoint)"
+            $requestParams = @{ Uri = $uri; Method = "POST" }
+            if ($null -ne $action.Body) {
+                $requestParams["Body"] = ($action.Body | ConvertTo-Json)
+            }
+            $response = Invoke-GraphRequestWithRetry @requestParams
+
+            if ($response.Success) {
+                Write-Host "$($action.Verb) sent to: $($deviceInfo.DeviceName)" -ForegroundColor Green
+                Write-AuditLog -Operation "Device$ActionName" -Target $deviceInfo.DeviceName -TargetType "Device" `
+                    -Result "Success" -Details "Intune ID: $($deviceInfo.Id)"
+                Add-ResultToHashtable -Results $results -SingleResult @{
+                    DeviceID = $deviceID; DeviceName = $deviceInfo.DeviceName; OS = "$($deviceInfo.OperatingSystem)"
+                    LastSync = "$($deviceInfo.LastSyncDateTime)"; Status = "Sent"; Message = "$($action.Verb) command sent"
+                }
+            }
+            else {
+                Write-Warning "$($action.Verb) failed for $($deviceInfo.DeviceName): $($response.Error.Message)"
+                Write-AuditLog -Operation "Device$ActionName" -Target $deviceInfo.DeviceName -TargetType "Device" `
+                    -Result "Failed" -ErrorMessage $response.Error.Message -Details "Intune ID: $($deviceInfo.Id)"
+                Add-ResultToHashtable -Results $results -SingleResult @{
+                    DeviceID = $deviceID; DeviceName = $deviceInfo.DeviceName; OS = "$($deviceInfo.OperatingSystem)"
+                    LastSync = "$($deviceInfo.LastSyncDateTime)"; Status = "Error"; Message = "$($response.Error.Message)"
+                }
+            }
+        }
+        catch {
+            Write-Error "Error processing device '$deviceID': $($_.Exception.Message)"
+            Add-ResultToHashtable -Results $results -SingleResult @{
+                DeviceID = $deviceID; DeviceName = "Error"; OS = "N/A"; LastSync = "N/A"
+                Status = "Error"; Message = $_.Exception.Message
+            }
+        }
+
+        Start-Sleep -Milliseconds 300  # Throttling protection
+    }
+
+    $sentCount = @($results["Status"] | Where-Object { $_ -eq "Sent" }).Count
+    $errorCount = @($results["Status"] | Where-Object { $_ -ne "Sent" }).Count
+    Write-Host "$($action.Verb) operation completed. Sent: $sentCount, Errors: $errorCount" -ForegroundColor Cyan
+    return $results
+}
+
+<#
+.SYNOPSIS
+    Sets the Intune primary user on a list of devices.
+.PARAMETER UserPrincipalName
+    The UPN of the user to assign as primary user on every device in the list.
+#>
+function Set-IntuneDevicePrimaryUser {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("EntraID ID", "Intune ID", "Device Name", "Serial Number")]
+        [string]$DesiredID,
+        [Parameter(Mandatory = $true)]
+        [string]$UserPrincipalName
+    )
+
+    Write-Host "Starting Set Primary User operation..." -ForegroundColor Cyan
+    Write-AppLog -Message "Set Primary User starting" -Level "DEBUG" -Details "File: $FilePath, IDType: $DesiredID, User: $UserPrincipalName"
+
+    if (-not (Test-Path $FilePath)) {
+        Write-Error "File not found: $FilePath"
+        return $null
+    }
+
+    # Resolve the target user once
+    $safeUpn = [uri]::EscapeDataString($UserPrincipalName)
+    $userResponse = Invoke-GraphRequestWithRetry -Uri "https://graph.microsoft.com/beta/users/$safeUpn`?`$select=id,displayName,userPrincipalName" -Method GET
+    if (-not $userResponse.Success) {
+        return @{ Error = "User '$UserPrincipalName' not found in Entra ID: $($userResponse.Error.Message)" }
+    }
+    $userId = $userResponse.Data.id
+    $userDisplayName = $userResponse.Data.displayName
+    Write-Host "Target user resolved: $userDisplayName ($userId)" -ForegroundColor Green
+
+    $deviceIDs = @(Get-Content -Path $FilePath -Encoding UTF8 | Where-Object { $_ -match '\S' })
+    $totalDevices = $deviceIDs.Count
+    $results = New-ResultsHashtable -Keys @("DeviceID", "DeviceName", "PreviousUser", "NewUser", "Status", "Message")
+    $counter = 0
+
+    foreach ($deviceID in $deviceIDs) {
+        $deviceID = $deviceID.Trim()
+        $counter++
+        Write-Host "#$counter of ${totalDevices}: $deviceID" -ForegroundColor Yellow
+
+        try {
+            $deviceInfo = Resolve-DeviceIdentifier -DeviceIdentifier $deviceID -IDType $DesiredID -SelectProperties @("Id", "DeviceName", "UserPrincipalName")
+
+            if ($null -eq $deviceInfo) {
+                Add-ResultToHashtable -Results $results -SingleResult @{
+                    DeviceID = $deviceID; DeviceName = "Not Found"; PreviousUser = "N/A"; NewUser = "N/A"
+                    Status = "Not Found"; Message = "Device not found in Intune"
+                }
+                continue
+            }
+
+            $previousUser = if ([string]::IsNullOrWhiteSpace($deviceInfo.UserPrincipalName)) { "(none)" } else { $deviceInfo.UserPrincipalName }
+            $uri = "https://graph.microsoft.com/beta/deviceManagement/managedDevices('$($deviceInfo.Id)')/users/`$ref"
+            $body = @{ "@odata.id" = "https://graph.microsoft.com/beta/users/$userId" } | ConvertTo-Json
+            $response = Invoke-GraphRequestWithRetry -Uri $uri -Method POST -Body $body
+
+            if ($response.Success) {
+                Write-Host "Primary user set on: $($deviceInfo.DeviceName)" -ForegroundColor Green
+                Write-AuditLog -Operation "SetPrimaryUser" -Target $deviceInfo.DeviceName -TargetType "Device" `
+                    -BeforeState "Primary user: $previousUser" -AfterState "Primary user: $UserPrincipalName" `
+                    -Result "Success" -Details "Intune ID: $($deviceInfo.Id)"
+                Add-ResultToHashtable -Results $results -SingleResult @{
+                    DeviceID = $deviceID; DeviceName = $deviceInfo.DeviceName; PreviousUser = $previousUser
+                    NewUser = $UserPrincipalName; Status = "Updated"; Message = "Primary user updated"
+                }
+            }
+            else {
+                Write-AuditLog -Operation "SetPrimaryUser" -Target $deviceInfo.DeviceName -TargetType "Device" `
+                    -Result "Failed" -ErrorMessage $response.Error.Message -Details "Intune ID: $($deviceInfo.Id)"
+                Add-ResultToHashtable -Results $results -SingleResult @{
+                    DeviceID = $deviceID; DeviceName = $deviceInfo.DeviceName; PreviousUser = $previousUser
+                    NewUser = "N/A"; Status = "Error"; Message = "$($response.Error.Message)"
+                }
+            }
+        }
+        catch {
+            Add-ResultToHashtable -Results $results -SingleResult @{
+                DeviceID = $deviceID; DeviceName = "Error"; PreviousUser = "N/A"; NewUser = "N/A"
+                Status = "Error"; Message = $_.Exception.Message
+            }
+        }
+
+        Start-Sleep -Milliseconds 300
+    }
+
+    Write-Host "Set Primary User operation completed." -ForegroundColor Cyan
+    return $results
+}
+
+<#
+.SYNOPSIS
+    Retrieves all Intune device categories (for the category picker).
+#>
+function Get-IntuneDeviceCategories {
+    $categories = Get-AllGraphPages -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceCategories?`$select=id,displayName"
+    $list = @()
+    foreach ($cat in $categories) {
+        $list += @{ Id = $cat.id; DisplayName = $cat.displayName }
+    }
+    return @{ Categories = $list }
+}
+
+<#
+.SYNOPSIS
+    Assigns an Intune device category to a list of devices.
+#>
+function Set-IntuneDeviceCategory {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("EntraID ID", "Intune ID", "Device Name", "Serial Number")]
+        [string]$DesiredID,
+        [Parameter(Mandatory = $true)]
+        [string]$CategoryId,
+        [Parameter(Mandatory = $true)]
+        [string]$CategoryName
+    )
+
+    Write-Host "Starting Set Device Category operation..." -ForegroundColor Cyan
+    Write-AppLog -Message "Set Device Category starting" -Level "DEBUG" -Details "File: $FilePath, IDType: $DesiredID, Category: $CategoryName"
+
+    if (-not (Test-Path $FilePath)) {
+        Write-Error "File not found: $FilePath"
+        return $null
+    }
+
+    $deviceIDs = @(Get-Content -Path $FilePath -Encoding UTF8 | Where-Object { $_ -match '\S' })
+    $totalDevices = $deviceIDs.Count
+    $results = New-ResultsHashtable -Keys @("DeviceID", "DeviceName", "Category", "Status", "Message")
+    $counter = 0
+
+    foreach ($deviceID in $deviceIDs) {
+        $deviceID = $deviceID.Trim()
+        $counter++
+        Write-Host "#$counter of ${totalDevices}: $deviceID" -ForegroundColor Yellow
+
+        try {
+            $deviceInfo = Resolve-DeviceIdentifier -DeviceIdentifier $deviceID -IDType $DesiredID -SelectProperties @("Id", "DeviceName")
+
+            if ($null -eq $deviceInfo) {
+                Add-ResultToHashtable -Results $results -SingleResult @{
+                    DeviceID = $deviceID; DeviceName = "Not Found"; Category = "N/A"
+                    Status = "Not Found"; Message = "Device not found in Intune"
+                }
+                continue
+            }
+
+            $uri = "https://graph.microsoft.com/beta/deviceManagement/managedDevices('$($deviceInfo.Id)')/deviceCategory/`$ref"
+            $body = @{ "@odata.id" = "https://graph.microsoft.com/beta/deviceManagement/deviceCategories/$CategoryId" } | ConvertTo-Json
+            $response = Invoke-GraphRequestWithRetry -Uri $uri -Method PUT -Body $body
+
+            if ($response.Success) {
+                Write-Host "Category set on: $($deviceInfo.DeviceName)" -ForegroundColor Green
+                Write-AuditLog -Operation "SetDeviceCategory" -Target $deviceInfo.DeviceName -TargetType "Device" `
+                    -AfterState "Category: $CategoryName" -Result "Success" -Details "Intune ID: $($deviceInfo.Id)"
+                Add-ResultToHashtable -Results $results -SingleResult @{
+                    DeviceID = $deviceID; DeviceName = $deviceInfo.DeviceName; Category = $CategoryName
+                    Status = "Updated"; Message = "Category assigned"
+                }
+            }
+            else {
+                Write-AuditLog -Operation "SetDeviceCategory" -Target $deviceInfo.DeviceName -TargetType "Device" `
+                    -Result "Failed" -ErrorMessage $response.Error.Message -Details "Intune ID: $($deviceInfo.Id)"
+                Add-ResultToHashtable -Results $results -SingleResult @{
+                    DeviceID = $deviceID; DeviceName = $deviceInfo.DeviceName; Category = "N/A"
+                    Status = "Error"; Message = "$($response.Error.Message)"
+                }
+            }
+        }
+        catch {
+            Add-ResultToHashtable -Results $results -SingleResult @{
+                DeviceID = $deviceID; DeviceName = "Error"; Category = "N/A"
+                Status = "Error"; Message = $_.Exception.Message
+            }
+        }
+
+        Start-Sleep -Milliseconds 300
+    }
+
+    Write-Host "Set Device Category operation completed." -ForegroundColor Cyan
+    return $results
+}
+
+<#
+.SYNOPSIS
+    Changes managed device ownership (company/personal) for a list of devices.
+#>
+function Set-IntuneDeviceOwnership {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("EntraID ID", "Intune ID", "Device Name", "Serial Number")]
+        [string]$DesiredID,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("company", "personal")]
+        [string]$Ownership
+    )
+
+    Write-Host "Starting Set Device Ownership operation..." -ForegroundColor Cyan
+    Write-AppLog -Message "Set Device Ownership starting" -Level "DEBUG" -Details "File: $FilePath, IDType: $DesiredID, Ownership: $Ownership"
+
+    if (-not (Test-Path $FilePath)) {
+        Write-Error "File not found: $FilePath"
+        return $null
+    }
+
+    $deviceIDs = @(Get-Content -Path $FilePath -Encoding UTF8 | Where-Object { $_ -match '\S' })
+    $totalDevices = $deviceIDs.Count
+    $results = New-ResultsHashtable -Keys @("DeviceID", "DeviceName", "PreviousOwnership", "NewOwnership", "Status", "Message")
+    $counter = 0
+
+    foreach ($deviceID in $deviceIDs) {
+        $deviceID = $deviceID.Trim()
+        $counter++
+        Write-Host "#$counter of ${totalDevices}: $deviceID" -ForegroundColor Yellow
+
+        try {
+            $deviceInfo = Resolve-DeviceIdentifier -DeviceIdentifier $deviceID -IDType $DesiredID -SelectProperties @("Id", "DeviceName", "ManagedDeviceOwnerType")
+
+            if ($null -eq $deviceInfo) {
+                Add-ResultToHashtable -Results $results -SingleResult @{
+                    DeviceID = $deviceID; DeviceName = "Not Found"; PreviousOwnership = "N/A"; NewOwnership = "N/A"
+                    Status = "Not Found"; Message = "Device not found in Intune"
+                }
+                continue
+            }
+
+            $previousOwnership = "$($deviceInfo.ManagedDeviceOwnerType)"
+            $uri = "https://graph.microsoft.com/beta/deviceManagement/managedDevices/$($deviceInfo.Id)"
+            $body = @{ managedDeviceOwnerType = $Ownership } | ConvertTo-Json
+            $response = Invoke-GraphRequestWithRetry -Uri $uri -Method PATCH -Body $body
+
+            if ($response.Success) {
+                Write-Host "Ownership set to '$Ownership' on: $($deviceInfo.DeviceName)" -ForegroundColor Green
+                Write-AuditLog -Operation "SetDeviceOwnership" -Target $deviceInfo.DeviceName -TargetType "Device" `
+                    -BeforeState "Ownership: $previousOwnership" -AfterState "Ownership: $Ownership" `
+                    -Result "Success" -Details "Intune ID: $($deviceInfo.Id)"
+                Add-ResultToHashtable -Results $results -SingleResult @{
+                    DeviceID = $deviceID; DeviceName = $deviceInfo.DeviceName; PreviousOwnership = $previousOwnership
+                    NewOwnership = $Ownership; Status = "Updated"; Message = "Ownership updated"
+                }
+            }
+            else {
+                Write-AuditLog -Operation "SetDeviceOwnership" -Target $deviceInfo.DeviceName -TargetType "Device" `
+                    -Result "Failed" -ErrorMessage $response.Error.Message -Details "Intune ID: $($deviceInfo.Id)"
+                Add-ResultToHashtable -Results $results -SingleResult @{
+                    DeviceID = $deviceID; DeviceName = $deviceInfo.DeviceName; PreviousOwnership = $previousOwnership
+                    NewOwnership = "N/A"; Status = "Error"; Message = "$($response.Error.Message)"
+                }
+            }
+        }
+        catch {
+            Add-ResultToHashtable -Results $results -SingleResult @{
+                DeviceID = $deviceID; DeviceName = "Error"; PreviousOwnership = "N/A"; NewOwnership = "N/A"
+                Status = "Error"; Message = $_.Exception.Message
+            }
+        }
+
+        Start-Sleep -Milliseconds 300
+    }
+
+    Write-Host "Set Device Ownership operation completed." -ForegroundColor Cyan
+    return $results
+}
+
+<#
+.SYNOPSIS
+    Sends a custom Company Portal notification to a list of devices (iOS/Android only).
+#>
+function Send-IntuneCustomNotification {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("EntraID ID", "Intune ID", "Device Name", "Serial Number")]
+        [string]$DesiredID,
+        [Parameter(Mandatory = $true)]
+        [string]$Title,
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+
+    Write-Host "Starting Send Custom Notification operation..." -ForegroundColor Cyan
+    Write-AppLog -Message "Send Custom Notification starting" -Level "DEBUG" -Details "File: $FilePath, IDType: $DesiredID, Title: $Title"
+
+    if (-not (Test-Path $FilePath)) {
+        Write-Error "File not found: $FilePath"
+        return $null
+    }
+
+    $deviceIDs = @(Get-Content -Path $FilePath -Encoding UTF8 | Where-Object { $_ -match '\S' })
+    $totalDevices = $deviceIDs.Count
+    $results = New-ResultsHashtable -Keys @("DeviceID", "DeviceName", "OS", "Status", "Message")
+    $counter = 0
+
+    foreach ($deviceID in $deviceIDs) {
+        $deviceID = $deviceID.Trim()
+        $counter++
+        Write-Host "#$counter of ${totalDevices}: $deviceID" -ForegroundColor Yellow
+
+        try {
+            $deviceInfo = Resolve-DeviceIdentifier -DeviceIdentifier $deviceID -IDType $DesiredID -SelectProperties @("Id", "DeviceName", "OperatingSystem")
+
+            if ($null -eq $deviceInfo) {
+                Add-ResultToHashtable -Results $results -SingleResult @{
+                    DeviceID = $deviceID; DeviceName = "Not Found"; OS = "N/A"
+                    Status = "Not Found"; Message = "Device not found in Intune"
+                }
+                continue
+            }
+
+            $uri = "https://graph.microsoft.com/beta/deviceManagement/managedDevices/$($deviceInfo.Id)/sendCustomNotificationToCompanyPortal"
+            $body = @{ notificationTitle = $Title; notificationBody = $Message } | ConvertTo-Json
+            $response = Invoke-GraphRequestWithRetry -Uri $uri -Method POST -Body $body
+
+            if ($response.Success) {
+                Write-Host "Notification sent to: $($deviceInfo.DeviceName)" -ForegroundColor Green
+                Write-AuditLog -Operation "SendCustomNotification" -Target $deviceInfo.DeviceName -TargetType "Device" `
+                    -Result "Success" -Details "Intune ID: $($deviceInfo.Id), Title: $Title"
+                Add-ResultToHashtable -Results $results -SingleResult @{
+                    DeviceID = $deviceID; DeviceName = $deviceInfo.DeviceName; OS = "$($deviceInfo.OperatingSystem)"
+                    Status = "Sent"; Message = "Notification sent to Company Portal"
+                }
+            }
+            else {
+                Add-ResultToHashtable -Results $results -SingleResult @{
+                    DeviceID = $deviceID; DeviceName = $deviceInfo.DeviceName; OS = "$($deviceInfo.OperatingSystem)"
+                    Status = "Error"; Message = "$($response.Error.Message)"
+                }
+            }
+        }
+        catch {
+            Add-ResultToHashtable -Results $results -SingleResult @{
+                DeviceID = $deviceID; DeviceName = "Error"; OS = "N/A"
+                Status = "Error"; Message = $_.Exception.Message
+            }
+        }
+
+        Start-Sleep -Milliseconds 300
+    }
+
+    Write-Host "Send Custom Notification operation completed." -ForegroundColor Cyan
+    return $results
+}
+
+#endregion ==================== BULK DEVICE REMOTE ACTIONS ====================
+
+#region ==================== FLEET-WIDE REPORTS ====================
+
+# Internal helper: fetch all managed devices with a chosen $select (paged)
+function Get-AllManagedDevicesRaw {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$SelectFields
+    )
+    $uri = "https://graph.microsoft.com/beta/deviceManagement/managedDevices?`$select=$SelectFields&`$top=999"
+    return @(Get-AllGraphPages -Uri $uri)
+}
+
+<#
+.SYNOPSIS
+    Reports devices that have not checked in for more than N days.
+#>
+function Get-StaleIntuneDevices {
+    param (
+        [Parameter(Mandatory = $true)]
+        [int]$DaysThreshold
+    )
+
+    Write-Host "Fetching all managed devices (this may take a while on large tenants)..." -ForegroundColor Cyan
+    Write-AppLog -Message "Stale devices report starting" -Level "DEBUG" -Details "Threshold: $DaysThreshold days"
+
+    $devices = Get-AllManagedDevicesRaw -SelectFields "id,deviceName,serialNumber,userPrincipalName,operatingSystem,osVersion,lastSyncDateTime,managedDeviceOwnerType,complianceState"
+    Write-Host "Total managed devices: $($devices.Count)" -ForegroundColor Yellow
+
+    $cutoff = (Get-Date).AddDays(-$DaysThreshold)
+    $stale = @()
+    foreach ($device in $devices) {
+        $lastSync = $null
+        try { $lastSync = [datetime]$device.lastSyncDateTime } catch { continue }
+        if ($lastSync -lt $cutoff) {
+            $stale += @{ Device = $device; LastSync = $lastSync }
+        }
+    }
+
+    # Oldest first
+    $stale = @($stale | Sort-Object { $_.LastSync })
+
+    $results = New-ResultsHashtable -Keys @("DeviceName", "SerialNumber", "IntuneID", "PrimaryUser", "OS", "OSVersion", "LastSync", "DaysSinceSync", "Compliance", "Ownership")
+    foreach ($entry in $stale) {
+        $device = $entry.Device
+        $daysSince = [math]::Floor(((Get-Date) - $entry.LastSync).TotalDays)
+        Add-ResultToHashtable -Results $results -SingleResult @{
+            DeviceName = "$($device.deviceName)"; SerialNumber = "$($device.serialNumber)"; IntuneID = "$($device.id)"
+            PrimaryUser = "$($device.userPrincipalName)"; OS = "$($device.operatingSystem)"; OSVersion = "$($device.osVersion)"
+            LastSync = $entry.LastSync.ToString("yyyy-MM-dd HH:mm"); DaysSinceSync = $daysSince
+            Compliance = "$($device.complianceState)"; Ownership = "$($device.managedDeviceOwnerType)"
+        }
+    }
+
+    Write-Host "Stale devices found: $($stale.Count) (no check-in for $DaysThreshold+ days)" -ForegroundColor Cyan
+    return @{ Results = $results; StaleCount = $stale.Count; TotalCount = $devices.Count; DaysThreshold = $DaysThreshold }
+}
+
+<#
+.SYNOPSIS
+    Reports serial numbers that have more than one Intune device record.
+#>
+function Get-DuplicateIntuneDevices {
+    Write-Host "Fetching all managed devices (this may take a while on large tenants)..." -ForegroundColor Cyan
+    Write-AppLog -Message "Duplicate device records report starting" -Level "DEBUG"
+
+    $devices = Get-AllManagedDevicesRaw -SelectFields "id,deviceName,serialNumber,userPrincipalName,operatingSystem,lastSyncDateTime,enrolledDateTime"
+    Write-Host "Total managed devices: $($devices.Count)" -ForegroundColor Yellow
+
+    # Group by serial number, ignoring blank/placeholder serials
+    $bySerial = @{}
+    foreach ($device in $devices) {
+        $serial = "$($device.serialNumber)".Trim()
+        if ([string]::IsNullOrWhiteSpace($serial)) { continue }
+        if ($serial -in @("SystemSerialNumber", "To be filled by O.E.M.", "Default string", "0")) { continue }
+        if (-not $bySerial.ContainsKey($serial)) { $bySerial[$serial] = @() }
+        $bySerial[$serial] += $device
+    }
+
+    $results = New-ResultsHashtable -Keys @("SerialNumber", "DeviceName", "IntuneID", "OS", "PrimaryUser", "EnrolledDate", "LastSync", "Suggestion")
+    $duplicateSerialCount = 0
+    $duplicateRecordCount = 0
+
+    foreach ($serial in ($bySerial.Keys | Sort-Object)) {
+        $records = $bySerial[$serial]
+        if ($records.Count -lt 2) { continue }
+        $duplicateSerialCount++
+
+        # Sort newest last-sync first; the newest record is the one to keep
+        $sorted = @($records | Sort-Object { try { [datetime]$_.lastSyncDateTime } catch { [datetime]::MinValue } } -Descending)
+        for ($i = 0; $i -lt $sorted.Count; $i++) {
+            $device = $sorted[$i]
+            $duplicateRecordCount++
+            $suggestion = if ($i -eq 0) { "Keep (newest sync)" } else { "Duplicate (older) - candidate for cleanup" }
+            $lastSyncText = ""
+            $enrolledText = ""
+            try { $lastSyncText = ([datetime]$device.lastSyncDateTime).ToString("yyyy-MM-dd HH:mm") } catch { $lastSyncText = "$($device.lastSyncDateTime)" }
+            try { $enrolledText = ([datetime]$device.enrolledDateTime).ToString("yyyy-MM-dd HH:mm") } catch { $enrolledText = "$($device.enrolledDateTime)" }
+            Add-ResultToHashtable -Results $results -SingleResult @{
+                SerialNumber = $serial; DeviceName = "$($device.deviceName)"; IntuneID = "$($device.id)"
+                OS = "$($device.operatingSystem)"; PrimaryUser = "$($device.userPrincipalName)"
+                EnrolledDate = $enrolledText; LastSync = $lastSyncText; Suggestion = $suggestion
+            }
+        }
+    }
+
+    Write-Host "Duplicate serials found: $duplicateSerialCount ($duplicateRecordCount records)" -ForegroundColor Cyan
+    return @{ Results = $results; DuplicateSerialCount = $duplicateSerialCount; DuplicateRecordCount = $duplicateRecordCount; TotalCount = $devices.Count }
+}
+
+<#
+.SYNOPSIS
+    Reports devices whose free disk space is below a threshold (in GB).
+#>
+function Get-LowDiskSpaceDevices {
+    param (
+        [Parameter(Mandatory = $true)]
+        [double]$MinFreeGB
+    )
+
+    Write-Host "Fetching all managed devices (this may take a while on large tenants)..." -ForegroundColor Cyan
+    Write-AppLog -Message "Low disk space report starting" -Level "DEBUG" -Details "Threshold: $MinFreeGB GB"
+
+    $devices = Get-AllManagedDevicesRaw -SelectFields "id,deviceName,serialNumber,userPrincipalName,operatingSystem,osVersion,freeStorageSpaceInBytes,totalStorageSpaceInBytes,lastSyncDateTime"
+    Write-Host "Total managed devices: $($devices.Count)" -ForegroundColor Yellow
+
+    $lowDisk = @()
+    foreach ($device in $devices) {
+        $totalBytes = [double]"$($device.totalStorageSpaceInBytes)"
+        if ($totalBytes -le 0) { continue }  # No storage data reported
+        $freeBytes = [double]"$($device.freeStorageSpaceInBytes)"
+        $freeGB = [math]::Round($freeBytes / 1GB, 1)
+        if ($freeGB -lt $MinFreeGB) {
+            $lowDisk += @{ Device = $device; FreeGB = $freeGB; TotalGB = [math]::Round($totalBytes / 1GB, 1) }
+        }
+    }
+
+    # Least free space first
+    $lowDisk = @($lowDisk | Sort-Object { $_.FreeGB })
+
+    $results = New-ResultsHashtable -Keys @("DeviceName", "SerialNumber", "PrimaryUser", "OS", "OSVersion", "FreeGB", "TotalGB", "PercentFree", "LastSync")
+    foreach ($entry in $lowDisk) {
+        $device = $entry.Device
+        $percentFree = if ($entry.TotalGB -gt 0) { [math]::Round(($entry.FreeGB / $entry.TotalGB) * 100, 1) } else { 0 }
+        $lastSyncText = ""
+        try { $lastSyncText = ([datetime]$device.lastSyncDateTime).ToString("yyyy-MM-dd HH:mm") } catch { $lastSyncText = "$($device.lastSyncDateTime)" }
+        Add-ResultToHashtable -Results $results -SingleResult @{
+            DeviceName = "$($device.deviceName)"; SerialNumber = "$($device.serialNumber)"; PrimaryUser = "$($device.userPrincipalName)"
+            OS = "$($device.operatingSystem)"; OSVersion = "$($device.osVersion)"
+            FreeGB = $entry.FreeGB; TotalGB = $entry.TotalGB; PercentFree = "$percentFree%"; LastSync = $lastSyncText
+        }
+    }
+
+    Write-Host "Devices below $MinFreeGB GB free: $($lowDisk.Count)" -ForegroundColor Cyan
+    return @{ Results = $results; LowDiskCount = $lowDisk.Count; TotalCount = $devices.Count; MinFreeGB = $MinFreeGB }
+}
+
+<#
+.SYNOPSIS
+    Reports devices where the Intune primary user differs from the last logged-on user.
+#>
+function Get-PrimaryUserMismatchReport {
+    Write-Host "Fetching all managed devices (this may take a while on large tenants)..." -ForegroundColor Cyan
+    Write-AppLog -Message "Primary user mismatch report starting" -Level "DEBUG"
+
+    $devices = Get-AllManagedDevicesRaw -SelectFields "id,deviceName,userPrincipalName,usersLoggedOn,operatingSystem,lastSyncDateTime"
+    Write-Host "Total managed devices: $($devices.Count)" -ForegroundColor Yellow
+
+    $userCache = @{}  # userId -> UPN (avoids repeated lookups)
+    $results = New-ResultsHashtable -Keys @("DeviceName", "IntuneID", "PrimaryUser", "LastLoggedOnUser", "LastLogOn", "OS", "LastSync")
+    $mismatchCount = 0
+    $checkedCount = 0
+
+    foreach ($device in $devices) {
+        $loggedOnUsers = @($device.usersLoggedOn)
+        if ($loggedOnUsers.Count -eq 0) { continue }  # No logon data - nothing to compare
+
+        # usersLoggedOn is ordered oldest->newest; take the most recent entry
+        $lastEntry = $loggedOnUsers[-1]
+        $lastUserId = "$($lastEntry.userId)"
+        if ([string]::IsNullOrWhiteSpace($lastUserId)) { continue }
+        $checkedCount++
+
+        # Resolve the logged-on user's UPN (cached)
+        if (-not $userCache.ContainsKey($lastUserId)) {
+            $userResponse = Invoke-GraphRequestWithRetry -Uri "https://graph.microsoft.com/beta/users/$lastUserId`?`$select=userPrincipalName" -Method GET -MaxRetries 1
+            if ($userResponse.Success) {
+                $userCache[$lastUserId] = "$($userResponse.Data.userPrincipalName)"
+            } else {
+                $userCache[$lastUserId] = "(unknown user $lastUserId)"
+            }
+        }
+        $lastUserUpn = $userCache[$lastUserId]
+
+        $primaryUpn = "$($device.userPrincipalName)"
+        $isMismatch = $false
+        if ([string]::IsNullOrWhiteSpace($primaryUpn)) {
+            $isMismatch = $true  # No primary user but someone logs on
+            $primaryUpn = "(none)"
+        } elseif ($lastUserUpn -notlike "(unknown*" -and ($primaryUpn -ne $lastUserUpn)) {
+            $isMismatch = $true
+        }
+
+        if ($isMismatch) {
+            $mismatchCount++
+            $lastLogOnText = ""
+            $lastSyncText = ""
+            try { $lastLogOnText = ([datetime]$lastEntry.lastLogOnDateTime).ToString("yyyy-MM-dd HH:mm") } catch { $lastLogOnText = "$($lastEntry.lastLogOnDateTime)" }
+            try { $lastSyncText = ([datetime]$device.lastSyncDateTime).ToString("yyyy-MM-dd HH:mm") } catch { $lastSyncText = "$($device.lastSyncDateTime)" }
+            Add-ResultToHashtable -Results $results -SingleResult @{
+                DeviceName = "$($device.deviceName)"; IntuneID = "$($device.id)"
+                PrimaryUser = $primaryUpn; LastLoggedOnUser = $lastUserUpn; LastLogOn = $lastLogOnText
+                OS = "$($device.operatingSystem)"; LastSync = $lastSyncText
+            }
+        }
+    }
+
+    Write-Host "Mismatches found: $mismatchCount (of $checkedCount devices with logon data)" -ForegroundColor Cyan
+    return @{ Results = $results; MismatchCount = $mismatchCount; CheckedCount = $checkedCount; TotalCount = $devices.Count }
+}
+
+<#
+.SYNOPSIS
+    Reports the per-device install status of a specific Intune app.
+.DESCRIPTION
+    Uses the POST reports/getDeviceInstallStatusReport endpoint (the same one the
+    Intune admin center uses). This works for ALL app types including the newer
+    WinGet/Store apps, unlike the legacy deviceStatuses navigation property.
+    Read-only despite being a POST request.
+#>
+function Get-AppInstallStatusReport {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$AppId,
+        [Parameter(Mandatory = $true)]
+        [string]$AppName
+    )
+
+    Write-Host "Fetching install status for app '$AppName'..." -ForegroundColor Cyan
+    Write-AppLog -Message "App install status report starting" -Level "DEBUG" -Details "App: $AppName ($AppId)"
+
+    # retrieveDeviceAppInstallationStatusReport is what the Intune admin center uses today.
+    # It returns the JSON payload as an octet-stream attachment, so Invoke-MgGraphRequest
+    # must write it to a file (-OutputFilePath) - it refuses to parse it inline.
+    $reportUri = "https://graph.microsoft.com/beta/deviceManagement/reports/retrieveDeviceAppInstallationStatusReport"
+    $pageSize = 500
+    $skip = 0
+    $columnIndex = @{}
+    $allRows = @()
+
+    # The report returns { TotalRowCount, Schema: [{Column,...}], Values: [[...]] } - page via top/skip
+    while ($true) {
+        $body = @{ filter = "(ApplicationId eq '$AppId')"; top = $pageSize; skip = $skip } | ConvertTo-Json
+        $tempFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "IntuneTool_report_$([System.Guid]::NewGuid().ToString('N')).json")
+        $data = $null
+        try {
+            Invoke-MgGraphRequest -Method POST -Uri $reportUri -Body $body -ContentType "application/json" -OutputFilePath $tempFile -ErrorAction Stop
+            $data = Get-Content -Path $tempFile -Raw | ConvertFrom-Json
+        }
+        catch {
+            return @{ Error = "Failed to fetch install status report: $($_.Exception.Message)" }
+        }
+        finally {
+            Remove-Item -Path $tempFile -Force -ErrorAction SilentlyContinue
+        }
+
+        if ($columnIndex.Count -eq 0 -and $null -ne $data.Schema) {
+            $schemaColumns = @($data.Schema)
+            for ($i = 0; $i -lt $schemaColumns.Count; $i++) {
+                $columnIndex["$($schemaColumns[$i].Column)"] = $i
+            }
+        }
+
+        $pageRows = @($data.Values)
+        $allRows += $pageRows
+        Write-Host "Fetched $($allRows.Count) status record(s)..." -ForegroundColor Yellow
+
+        if ($pageRows.Count -lt $pageSize) { break }
+        $skip += $pageSize
+        if ($skip -ge 100000) { break }  # Safety cap
+    }
+
+    # Helper: read a named column from a row, empty string when the column is absent
+    $getColumn = {
+        param($row, [string]$name)
+        if ($columnIndex.ContainsKey($name)) { "$($row[$columnIndex[$name]])" } else { "" }
+    }
+
+    $results = New-ResultsHashtable -Keys @("DeviceName", "UserPrincipalName", "Platform", "AppVersion", "InstallState", "InstallStateDetail", "ErrorCode", "LastModified")
+    $installedCount = 0
+    $failedCount = 0
+
+    foreach ($row in $allRows) {
+        # Prefer the human-readable columns (the newer endpoint adds localized *_loc columns);
+        # fall back to the raw numeric ones
+        $state = ""
+        foreach ($column in @("AppInstallState_loc", "AppInstallState", "InstallState_loc", "InstallState")) {
+            $state = & $getColumn $row $column
+            if (-not [string]::IsNullOrWhiteSpace($state)) { break }
+        }
+        $stateDetail = ""
+        foreach ($column in @("AppInstallStateDetails_loc", "AppInstallStateDetails", "InstallStateDetail_loc", "InstallStateDetail")) {
+            $stateDetail = & $getColumn $row $column
+            if (-not [string]::IsNullOrWhiteSpace($stateDetail)) { break }
+        }
+        $errorCode = & $getColumn $row "HexErrorCode"
+        if ([string]::IsNullOrWhiteSpace($errorCode) -or $errorCode -eq "0") { $errorCode = "" }
+
+        if ($state -match "^installed$") { $installedCount++ }
+        elseif ($state -match "fail") { $failedCount++ }
+
+        $lastModifiedText = & $getColumn $row "LastModifiedDateTime"
+        try { $lastModifiedText = ([datetime]$lastModifiedText).ToString("yyyy-MM-dd HH:mm") } catch {}
+
+        Add-ResultToHashtable -Results $results -SingleResult @{
+            DeviceName = (& $getColumn $row "DeviceName")
+            UserPrincipalName = (& $getColumn $row "UserPrincipalName")
+            Platform = (& $getColumn $row "Platform")
+            AppVersion = (& $getColumn $row "AppVersion")
+            InstallState = $state
+            InstallStateDetail = $stateDetail
+            ErrorCode = $errorCode
+            LastModified = $lastModifiedText
+        }
+    }
+
+    Write-Host "App install status completed. Installed: $installedCount, Failed: $failedCount, Total records: $($allRows.Count)" -ForegroundColor Cyan
+    return @{ Results = $results; InstalledCount = $installedCount; FailedCount = $failedCount; TotalCount = $allRows.Count; AppName = $AppName }
+}
+
+#endregion ==================== FLEET-WIDE REPORTS ====================
+
 #region ==================== MODULE EXPORTS ====================
 # Explicitly export public functions
 Export-ModuleMember -Function @(
@@ -3028,9 +3829,24 @@ Export-ModuleMember -Function @(
     'Resolve-DeviceIdsFromInput',
     'Invoke-AndroidAppChangeAssignments',
 
+    # Bulk remote actions
+    'Invoke-IntuneBulkDeviceAction',
+    'Set-IntuneDevicePrimaryUser',
+    'Get-IntuneDeviceCategories',
+    'Set-IntuneDeviceCategory',
+    'Set-IntuneDeviceOwnership',
+    'Send-IntuneCustomNotification',
+
+    # Fleet-wide reports
+    'Get-StaleIntuneDevices',
+    'Get-DuplicateIntuneDevices',
+    'Get-LowDiskSpaceDevices',
+    'Get-PrimaryUserMismatchReport',
+    'Get-AppInstallStatusReport',
+
     # User functions
     'Get-EntraUserDetails',
-    
+
     # Policy functions
     'Get-PolicyNonComplianceSettings'
 )

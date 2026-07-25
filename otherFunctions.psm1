@@ -320,7 +320,14 @@ function Write-AuditLog {
     #>
     param (
         [Parameter(Mandatory = $true)]
-        [ValidateSet("DeviceRetire", "DeviceDelete", "GroupImport", "GroupRemove", "GroupClear", "AutopilotTagUpdate", "RecordDelete", "DeviceQuery", "GroupMembershipCheck", "Other")]
+        [ValidateSet(
+            "DeviceRetire", "DeviceDelete", "GroupImport", "GroupRemove", "GroupClear", "AutopilotTagUpdate",
+            "RecordDelete", "DeviceQuery", "GroupMembershipCheck",
+            "DeviceSync", "DeviceRestart", "DeviceRotateBitLockerKeys", "DeviceRotateLocalAdminPassword",
+            "DeviceRemoteLock", "DeviceDefenderQuickScan", "DeviceDefenderFullScan",
+            "SetPrimaryUser", "SetDeviceCategory", "SetDeviceOwnership", "SendCustomNotification",
+            "Other"
+        )]
         [string]$Operation,
         
         [Parameter(Mandatory = $true)]

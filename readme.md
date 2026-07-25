@@ -2,6 +2,8 @@
 
 A sophisticated, graphical PowerShell/WPF application designed for Microsoft Intune administrators to effortlessly perform bulk device management tasks, reporting, and complex administrative actions.
 
+> **Current version: 1.2.0** — see the [CHANGELOG](CHANGELOG.md) for what's new.
+
 ## 🚀 Features
 
 **🎯 Core Logic:**
@@ -13,9 +15,19 @@ At the heart of the tool is ultimate flexibility. For most reporting and action 
 * Analyze OS distribution and App version distribution.
 * Check Group Assignments and Intune Group Member details.
 * Extract all detected apps across devices.
+* Find **stale devices** (no check-in for X days) — export and feed straight into Retire/Delete for cleanup.
+* Detect **duplicate device records** (same serial, multiple Intune records) with keep/cleanup suggestions.
+* Check **per-device install status** of any app (installed / failed / pending).
+* Find devices with **low disk space** (below a free-GB threshold you choose).
+* Spot **primary user mismatches** (primary user ≠ last logged-on user) — then fix them in bulk.
 
 **⚡ Powerful Actions:**
 * Import or remove devices to/from Entra ID groups in bulk.
+* **Sync** (force check-in) and **restart** devices in bulk.
+* Rotate **BitLocker recovery keys** and **LAPS passwords**.
+* **Remote lock** lost or stolen devices and trigger **Defender quick/full scans**.
+* Set the **primary user**, **device category**, and **ownership** (Company/Personal) in bulk.
+* Send **custom notifications** to the Company Portal app (iOS/Android).
 * Retire devices securely.
 * Update Autopilot Group Tags.
 * Bulk rename devices based on serial numbers.

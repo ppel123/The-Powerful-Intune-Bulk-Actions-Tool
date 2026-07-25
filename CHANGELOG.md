@@ -12,6 +12,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [1.2.0] — 2026-07-25
+
+### Added
+
+#### New Actions (11)
+- **Sync Devices** — force an immediate Intune check-in on devices in bulk
+- **Restart Devices** — send a reboot command in bulk
+- **Rotate BitLocker Keys** — rotate BitLocker recovery keys (escrowed to Entra ID)
+- **Rotate LAPS Password** — rotate the Windows LAPS local admin password
+- **Remote Lock Devices** — remotely lock lost/stolen devices
+- **Defender Quick Scan / Full Scan** — trigger Microsoft Defender Antivirus scans
+- **Set Primary User** — assign the Intune primary user (UPN) in bulk
+- **Set Device Category** — assign a device category (picker loads the tenant's categories)
+- **Set Device Ownership** — flip devices between Company and Personal
+- **Send Custom Notification** — push a custom title + message to the Company Portal app (iOS/Android)
+
+#### New Reports (5)
+- **Get Stale Devices** — devices with no check-in for more than X days (feeds directly into Retire/Delete for cleanup)
+- **Get Duplicate Device Records** — serial numbers with multiple Intune records; newest record flagged 'Keep', older ones flagged as cleanup candidates
+- **Get App Install Status** — per-device install state (installed/failed/pending) for a selected app
+- **Get Low Disk Space Devices** — devices below a configurable free-space threshold (GB)
+- **Get Primary User Mismatch** — devices where the primary user differs from the last logged-on user (fix in bulk with Set Primary User)
+
+#### Permissions
+- New Graph scopes requested at sign-in: `DeviceManagementManagedDevices.PrivilegedOperations.All` (remote actions) and `User.Read.All` (user lookups). Existing sessions must disconnect and sign in again to grant them.
+
+---
+
 ## [1.1.0] — 2026-07-24
 
 ### Changed
