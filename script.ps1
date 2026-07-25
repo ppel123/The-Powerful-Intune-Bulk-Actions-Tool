@@ -591,7 +591,7 @@ function ConvertTo-EscapedXaml {
     $patterns = @(
         'TextChanged="TextBox_TextChanged"',
         'Click="SignInButton_Click"',
-        'Source="/MainImage.png"',
+        'Source="/images/MainImage.png"',
         'd:ItemsSource="{d:SampleData ItemCount=5}"',
         'Margin="22,127,0,0"',
         'Margin="240,165,0,0"',
@@ -600,7 +600,7 @@ function ConvertTo-EscapedXaml {
     )
 
     # Define replacements
-    $imagePath = "$scriptDir\MainImage.png"
+    $imagePath = "$scriptDir\images\MainImage.png"
     $replacements = @(
         '',
         '',

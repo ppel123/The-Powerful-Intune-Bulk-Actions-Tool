@@ -52,7 +52,9 @@ IntuneTool/
 ├── graphFunctions.psm1        # Graph API module (3,853 lines)
 ├── otherFunctions.psm1        # Utility module (1,247 lines)
 ├── MainWindow.xaml            # WPF UI definition + Fluent theme (970 lines)
-├── MainImage.png              # Application logo
+├── images/
+│   ├── MainImage.png          # Application logo
+│   └── Animation.gif          # Demo GIF used in readme.md
 ├── readme.md                  # User-facing documentation
 ├── CHANGELOG.md               # Version history
 ├── config.json                # OPTIONAL, user-created: { "ExportDirectory": "D:\\Path" }

@@ -530,7 +530,7 @@
                     <!-- Left Column: Logo, Sign-in, Connection status -->
                     <Border Style="{StaticResource Card}" Grid.Column="0" Padding="18">
                         <StackPanel>
-                            <Image x:Name="MainImage" Height="110" Width="110" Source="/MainImage.png" Stretch="Uniform" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                            <Image x:Name="MainImage" Height="110" Width="110" Source="/images/MainImage.png" Stretch="Uniform" HorizontalAlignment="Center" Margin="0,8,0,0"/>
                             <Button x:Name="SignInButtonCopy" Style="{StaticResource AccentButton}" Content="Sign In - Start Here" Height="42" Margin="0,24,0,10" FontSize="14" ToolTip="Connect to Microsoft Graph with your credentials to access Intune data"/>
                             <Button x:Name="DisconnectBtn" Content="Disconnect" Height="36" Margin="0,0,0,22" FontSize="13" ToolTip="Disconnect from Microsoft Graph and clear session"/>
                             <Label x:Name="NotConnectedLabel" Style="{StaticResource StatusBadge}" Content="●  Not Connected" Background="#FDECEA" BorderBrush="#F5C6C0" Foreground="#C5221F"/>
@@ -596,7 +596,7 @@
                     <!-- Left rail: Logo and Generate button -->
                     <Border Style="{StaticResource Card}" Grid.Column="0" Padding="12" VerticalAlignment="Top">
                         <StackPanel>
-                            <Image x:Name="MainImageCopy" Height="70" Width="70" Margin="0,4,0,14" Source="/MainImage.png" Stretch="Uniform" HorizontalAlignment="Center"/>
+                            <Image x:Name="MainImageCopy" Height="70" Width="70" Margin="0,4,0,14" Source="/images/MainImage.png" Stretch="Uniform" HorizontalAlignment="Center"/>
                             <Button x:Name="GenerateReportButton" Style="{StaticResource AccentButton}" Content="Generate&#xD;&#xA;Report" Height="64" FontSize="15" ToolTip="Execute the selected report with the specified parameters"/>
                         </StackPanel>
                     </Border>
@@ -749,7 +749,7 @@
                     <!-- Left rail: Logo and Perform button -->
                     <Border Style="{StaticResource Card}" Grid.Column="0" Padding="12" VerticalAlignment="Top">
                         <StackPanel>
-                            <Image x:Name="MainImageCopy1" Height="70" Width="70" Margin="0,4,0,14" Source="/MainImage.png" Stretch="Uniform" HorizontalAlignment="Center"/>
+                            <Image x:Name="MainImageCopy1" Height="70" Width="70" Margin="0,4,0,14" Source="/images/MainImage.png" Stretch="Uniform" HorizontalAlignment="Center"/>
                             <Button x:Name="PerformActionButton" Style="{StaticResource AccentButton}" Content="Perform&#xD;&#xA;Action" Height="64" FontSize="15" ToolTip="Execute the selected action with the specified parameters"/>
                         </StackPanel>
                     </Border>
