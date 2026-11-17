@@ -12,6 +12,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [1.3.0] — 2026-11-17
+
+### Added
+
+- **App Version Distribution — percentages:** new `% of Devices` column (share of reporting devices on each version) and `Install Success %` column (installed ÷ total per version). The completion popup now also shows the most common version and the share of devices already on the current version.
+- **Search in dropdowns:** longer dropdowns (8+ items, e.g. Report, Action, app pickers) now show a search box at the top of the list. Typing filters the list (case-insensitive, every word must match); **Down** moves into the results, **Enter** picks the first match, **Esc** closes. The search clears each time the dropdown closes.
+- **Resizable Activity Log:** drag the grip at the top of the Activity Log up or down to make it bigger or smaller (min 80 px; the tabs above always keep at least 250 px). Double-click the grip to reset to the default size. The previous 220 px height cap is removed.
+
+### Changed
+
+- **App Version Distribution:** columns now always appear in a fixed order (Version, Total Devices, % of Devices, Installed, Pending, Failed, Install Success %, Is Current).
+- **App Version Distribution:** faster on large tenants — fetches up to 500 rows per request instead of 50, and paging now follows the report's total row count so no rows are skipped if the service returns smaller pages.
+
+---
+
 ## [1.2.0] — 2026-07-25
 
 ### Added

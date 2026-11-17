@@ -1,8 +1,8 @@
 # The Powerful Intune Bulk Actions Tool - Complete Code Documentation
 
-**Version:** 1.2.0  
-**Last Updated:** July 2026  
-**Total Lines of Code:** ~10,539 lines (script.ps1: 4,469, graphFunctions.psm1: 3,853, otherFunctions.psm1: 1,247, MainWindow.xaml: 970)
+**Version:** 1.3.0  
+**Last Updated:** November 2026  
+**Total Lines of Code:** ~10,800 lines (script.ps1: 4,543, graphFunctions.psm1: 3,853, otherFunctions.psm1: 1,399, MainWindow.xaml: 1,004)
 
 ---
 
@@ -505,6 +505,7 @@ try {
 | `Invoke-AsyncOperation` | Main async orchestration with callbacks |
 | `ConvertTo-EscapedXaml` | Transforms XAML for PowerShell WPF loading |
 | `Add-ActivityLogEntry` | Parses log lines and feeds them into the real-time Activity Log ListView |
+| `Set-ActivityLogHeight` | Resizes the Activity Log (drag grip `ActivityLogResizeThumb`), clamped between 80 px and the space the tabs can spare above their 250 px minimum |
 | `Show-FilePicker` | WPF file open dialog helper |
 | `Add-SelectFileButton` | Adds a "Select file..." browse button to a grid |
 | `Update-LastSyncTime` | Updates the "Connected: ..." sync time label on the Home tab |
@@ -596,7 +597,7 @@ try {
 | `Get-TPMAndBIOSInfo` | TPM/BIOS/Hardware info for all devices | All Devices (auto) |
 | `Get-IntuneDetectedApps` | Detected apps on device(s) | Single/Multiple |
 | `Get OS Distribution` | OS build version distribution by platform | Platform Selection |
-| `Get App Version Distribution` | App version distribution across devices | Platform + App Selection |
+| `Get App Version Distribution` | App version distribution across devices (count, % of devices, install success %) | Platform + App Selection |
 | `Get Group Members Intune Info` | Group device members with Intune details | Group Name/ID |
 | **`Get-StaleIntuneDevices`** | Devices with no check-in for N+ days (fleet-wide scan) | Days threshold |
 | **`Get-DuplicateIntuneDevices`** | Serials with multiple Intune records, keep/cleanup suggestions | None (fleet-wide) |
@@ -703,6 +704,7 @@ $script:LogLevelPriority = @{
 | `UnhideItems` | Shows WPF elements | ItemNames (array) |
 | `HideItems` | Hides WPF elements | ItemNames (array) |
 | `FillDataListView` | Populates ListView from hashtable | ListView, Headers, Data |
+| `Enable-ComboBoxSearch` | Adds type-to-search to a dropdown (search box shown for 8+ items; hides non-matching items without changing the selection). Applied to every named ComboBox at startup. | ComboBox |
 
 #### Log Rotation Logic
 
@@ -876,6 +878,7 @@ Export-ModuleMember -Function @(
     'HideItems',
     'FillDataListView',
     'Export-ListViewToCsv',
+    'Enable-ComboBoxSearch',
 
     # Device rename functions
     'Get-IntuneDevicesForRename',
