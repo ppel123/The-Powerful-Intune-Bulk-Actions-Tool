@@ -241,9 +241,21 @@
                                         <Border.Effect>
                                             <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.18"/>
                                         </Border.Effect>
-                                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                            <ItemsPresenter Margin="0,4" KeyboardNavigation.DirectionalNavigation="Contained"/>
-                                        </ScrollViewer>
+                                        <!-- Search box (shown only for longer lists - see Enable-ComboBoxSearch in otherFunctions.psm1) -->
+                                        <DockPanel>
+                                            <Grid Name="SearchPanel" DockPanel.Dock="Top" Margin="6,6,6,2" Visibility="Collapsed">
+                                                <TextBox Name="SearchBox" FontSize="13" Padding="8,4"/>
+                                                <TextBlock Name="SearchPlaceholder" Text="Type to search..." FontSize="13"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           Margin="11,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                            </Grid>
+                                            <TextBlock Name="NoMatchesText" DockPanel.Dock="Top" Text="No matches"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" FontStyle="Italic"
+                                                       Margin="14,8" Visibility="Collapsed"/>
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                                <ItemsPresenter Margin="0,4" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                            </ScrollViewer>
+                                        </DockPanel>
                                     </Border>
                                 </Grid>
                             </Popup>
@@ -929,7 +941,28 @@
 
         <!-- ================================ ACTIVITY LOG ================================ -->
         <Expander x:Name="ActivityLogExpander" Grid.Row="1" Header="📋  Activity Log" Margin="16,10,16,14" IsExpanded="False">
-            <ListView x:Name="LvActivityLog" Height="160" MaxHeight="220" VirtualizingPanel.IsVirtualizing="True">
+          <DockPanel>
+            <!-- Drag handle: drag up/down to resize the log, double-click to reset (wired in script.ps1) -->
+            <Thumb x:Name="ActivityLogResizeThumb" DockPanel.Dock="Top" Height="10" Margin="0,2,0,2"
+                   Cursor="SizeNS" ToolTip="Drag to resize the Activity Log (double-click to reset)">
+                <Thumb.Template>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border Name="HandleArea" Background="Transparent">
+                            <Border Name="Grip" Width="48" Height="4" CornerRadius="2"
+                                    Background="#C6CFD9" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Grip" Property="Background" Value="#98A6B5"/>
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter TargetName="Grip" Property="Background" Value="{StaticResource AccentBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Thumb.Template>
+            </Thumb>
+            <ListView x:Name="LvActivityLog" Height="160" VirtualizingPanel.IsVirtualizing="True">
                 <ListView.View>
                     <GridView>
                         <GridViewColumn Header="Time" DisplayMemberBinding="{Binding Time}" Width="165"/>
@@ -964,6 +997,7 @@
                     </GridView>
                 </ListView.View>
             </ListView>
+          </DockPanel>
         </Expander>
 
     </Grid>

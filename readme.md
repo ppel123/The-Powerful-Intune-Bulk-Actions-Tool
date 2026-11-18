@@ -2,7 +2,7 @@
 
 A sophisticated, graphical PowerShell/WPF application designed for Microsoft Intune administrators to effortlessly perform bulk device management tasks, reporting, and complex administrative actions.
 
-> **Current version: 1.2.0** — see the [CHANGELOG](CHANGELOG.md) for what's new.
+> **Current version: 1.3.0** — see the [CHANGELOG](CHANGELOG.md) for what's new.
 
 ## 🚀 Features
 
@@ -12,7 +12,7 @@ At the heart of the tool is ultimate flexibility. For most reporting and action 
 **📊 Extensive Reporting:**
 * Retrieve critical device information, BitLocker status, and last logged-on user.
 * Pull Autopilot info, TPM/BIOS hardware details, and Policy Non-Compliance settings.
-* Analyze OS distribution and App version distribution.
+* Analyze OS distribution and App version distribution (device count and **% of devices per version**, plus install success rate).
 * Check Group Assignments and Intune Group Member details.
 * Extract all detected apps across devices.
 * Find **stale devices** (no check-in for X days) — export and feed straight into Retire/Delete for cleanup.
@@ -33,6 +33,10 @@ At the heart of the tool is ultimate flexibility. For most reporting and action 
 * Bulk rename devices based on serial numbers.
 * Remove Android Apps from devices via Intune remote action.
 * Delete Intune, Autopilot, and Entra ID device records simultaneously.
+
+**🖥️ Handy UI:**
+* **Search in dropdowns** — longer lists (reports, actions, apps) have a search box: just start typing to filter.
+* **Resizable Activity Log** — drag the grip above the log up or down to resize it (double-click to reset).
 
 ## 🛠️ Getting Started
 

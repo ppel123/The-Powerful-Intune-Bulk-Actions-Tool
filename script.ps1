@@ -40,7 +40,7 @@ $scriptDir = $PSScriptRoot
 #===========================================================================
 # APP VERSION
 #===========================================================================
-$script:AppVersion = "1.2.0"
+$script:AppVersion = "1.3.0"
 
 #===========================================================================
 # ENSURE STA MODE (required by WPF)
@@ -665,11 +665,52 @@ $xaml.SelectNodes("//*[@x:Name]", $nsmgr) | ForEach-Object {
     }
 }
 
+# Add type-to-search to every dropdown (the search box only appears for longer lists)
+$xaml.SelectNodes("//*[local-name()='ComboBox'][@x:Name]", $nsmgr) | ForEach-Object {
+    $comboControl = $Form.FindName($_.GetAttribute("Name", "http://schemas.microsoft.com/winfx/2006/xaml"))
+    if ($comboControl -is [System.Windows.Controls.ComboBox]) {
+        Enable-ComboBoxSearch -ComboBox $comboControl
+    }
+}
+
 #===========================================================================
 # Activity Log Panel – tails the app log file and shows entries in the UI
 #===========================================================================
 
 $script:LogTailOffset = 0
+
+# --- Resizable Activity Log: drag the grip above the log up (bigger) or down (smaller) ---
+$script:ActivityLogDefaultHeight = 160   # matches Height in MainWindow.xaml; double-click the grip to return to it
+$script:ActivityLogMinHeight     = 80    # log never gets smaller than this
+$script:MainTabsMinHeight        = 250   # the tabs above always keep at least this much room
+
+function Set-ActivityLogHeight {
+    param([double]$Height)
+    # The log grows into the space of the tabs above it, so the upper limit is
+    # "current log height + whatever the tabs can spare above their minimum".
+    $tabsHeight = $WPFMainTabControl.ActualHeight
+    $maxHeight = $WPFLvActivityLog.ActualHeight + [math]::Max(0, $tabsHeight - $script:MainTabsMinHeight)
+    $maxHeight = [math]::Max($script:ActivityLogMinHeight, $maxHeight)
+    $WPFLvActivityLog.Height = [math]::Min([math]::Max($Height, $script:ActivityLogMinHeight), $maxHeight)
+}
+
+# Dragging up gives a negative VerticalChange, so subtracting it makes the log taller
+$WPFActivityLogResizeThumb.Add_DragDelta({
+    param($thumbSource, $e)
+    Set-ActivityLogHeight -Height ($WPFLvActivityLog.Height - $e.VerticalChange)
+})
+
+$WPFActivityLogResizeThumb.Add_MouseDoubleClick({
+    Set-ActivityLogHeight -Height $script:ActivityLogDefaultHeight
+})
+
+# If the window is made smaller, shrink the log first so the tabs keep their minimum room
+$Form.Add_SizeChanged({
+    if ($WPFActivityLogExpander.IsExpanded -and $WPFMainTabControl.ActualHeight -lt $script:MainTabsMinHeight -and $WPFLvActivityLog.Height -gt $script:ActivityLogMinHeight) {
+        $shortfall = $script:MainTabsMinHeight - $WPFMainTabControl.ActualHeight
+        $WPFLvActivityLog.Height = [math]::Max($script:ActivityLogMinHeight, $WPFLvActivityLog.Height - $shortfall)
+    }
+})
 
 function Add-ActivityLogEntry {
     param([string]$Line)
@@ -1064,7 +1105,7 @@ $script:reportDescriptions = @{
     "Get User Details - User account info" = "Retrieves Entra ID user information including display name, job title, department, and account status."
     "Get Policy Non-Compliance Settings - Non-compliant settings" = "Shows which specific settings in a policy are causing non-compliance for the specified devices."
     "Get OS Distribution - OS version counts" = "Shows the distribution of OS build versions for corporate devices. Select a platform to see counts of each build number."
-    "Get App Version Distribution - App version counts" = "Shows installed version distribution for a specific app across devices. Select platform, then app to see which versions are deployed. Uses POST request (read-only)."
+    "Get App Version Distribution - App version counts" = "Shows installed version distribution for a specific app across devices. Select platform, then app to see which versions are deployed, the share of devices on each version (%) and the install success rate per version. Uses POST request (read-only)."
     "Get Group Members Intune Info - Group devices info" = "Retrieves all device members of a group and shows their Intune information including compliance, OS version, last sync, and enrollment status."
     "Get Stale Devices - No check-in for X days" = "Scans ALL managed devices and lists those that have not checked in for more than the specified number of days. Export the results and feed them back into Retire/Delete actions for cleanup. May take several minutes on large tenants."
     "Get Duplicate Device Records - Same serial, multiple records" = "Scans ALL managed devices and flags serial numbers with more than one Intune record. The newest record is marked 'Keep'; older ones are cleanup candidates. May take several minutes on large tenants."
@@ -3862,12 +3903,13 @@ $WPFGenerateReportButton.Add_Click({
                 # Use the retrieveDeviceAppInstallationStatusReport endpoint (this is what Intune portal uses)
                 $reportUri = "https://graph.microsoft.com/beta/deviceManagement/reports/retrieveDeviceAppInstallationStatusReport"
                 
-                $allRows = @()
+                $allRows = [System.Collections.Generic.List[object]]::new()
                 $skip = 0
-                $top = 50
+                $top = 500
                 $hasMore = $true
                 $schema = $null
-                
+                $totalRowCount = $null
+
                 while ($hasMore) {
                     $body = @{
                         select = @("AppInstallState", "AppInstallStateDetails", "ApplicationId", "AppVersion", "DeviceId", "DeviceName", "Platform", "UserName", "UserPrincipalName", "LastModifiedDateTime")
@@ -3892,12 +3934,18 @@ $WPFGenerateReportButton.Add_Click({
                         $schema = $response.Schema
                     }
                     
+                    if ($null -eq $totalRowCount -and $null -ne $response.TotalRowCount) {
+                        $totalRowCount = [int]$response.TotalRowCount
+                    }
+
                     if ($response.Values -and $response.Values.Count -gt 0) {
-                        $allRows += $response.Values
-                        $skip += $top
-                        
-                        # Check if we got a full page (might have more)
-                        if ($response.Values.Count -lt $top) {
+                        foreach ($value in $response.Values) { $allRows.Add($value) }
+                        # Advance by the rows actually returned - the service may cap the page size below $top
+                        $skip += $response.Values.Count
+
+                        if ($null -ne $totalRowCount) {
+                            $hasMore = $allRows.Count -lt $totalRowCount
+                        } elseif ($response.Values.Count -lt $top) {
                             $hasMore = $false
                         }
                     } else {
@@ -3958,30 +4006,50 @@ $WPFGenerateReportButton.Add_Click({
                 $results = @{
                     "Version" = @()
                     "Total Devices" = @()
+                    "% of Devices" = @()
                     "Installed" = @()
                     "Pending" = @()
                     "Failed" = @()
+                    "Install Success %" = @()
                     "Is Current" = @()
                 }
-                
+
+                $grandTotal = $allRows.Count
+
                 # Sort by total count descending
-                $sortedVersions = $versionStats.GetEnumerator() | Sort-Object { $_.Value.Total } -Descending
-                
+                $sortedVersions = @($versionStats.GetEnumerator() | Sort-Object { $_.Value.Total } -Descending)
+
                 foreach ($entry in $sortedVersions) {
+                    $share = [math]::Round(($entry.Value.Total / $grandTotal) * 100, 1)
+                    $successRate = if ($entry.Value.Total -gt 0) { [math]::Round(($entry.Value.Installed / $entry.Value.Total) * 100, 1) } else { 0 }
+
                     $results["Version"] += $entry.Key
                     $results["Total Devices"] += $entry.Value.Total
+                    $results["% of Devices"] += $share
                     $results["Installed"] += $entry.Value.Installed
                     $results["Pending"] += $entry.Value.Pending
                     $results["Failed"] += $entry.Value.Failed
+                    $results["Install Success %"] += $successRate
                     $results["Is Current"] += if ($entry.Key -eq $currentVersion) { "Yes" } else { "No" }
                 }
-                
-                return @{ 
+
+                # Summary figures for the completion popup
+                $topVersion = $sortedVersions[0].Key
+                $topVersionShare = [math]::Round(($sortedVersions[0].Value.Total / $grandTotal) * 100, 1)
+                $currentVersionShare = $null
+                if ($currentVersion -and $versionStats.ContainsKey($currentVersion)) {
+                    $currentVersionShare = [math]::Round(($versionStats[$currentVersion].Total / $grandTotal) * 100, 1)
+                }
+
+                return @{
                     Results = $results
-                    TotalDevices = $allRows.Count
+                    TotalDevices = $grandTotal
                     UniqueVersions = $versionStats.Count
                     AppName = $appName
                     CurrentVersion = $currentVersion
+                    TopVersion = $topVersion
+                    TopVersionShare = $topVersionShare
+                    CurrentVersionShare = $currentVersionShare
                 }
             }
             catch {
@@ -4020,15 +4088,21 @@ $WPFGenerateReportButton.Add_Click({
             
             Write-AppLog -Message "App Version Distribution report completed" -Level "REPORT" -Details "App: $appName, Total: $totalDevices, Unique versions: $uniqueVersions"
             
-            # Display in ListView - determine headers from the results
-            $displayHeaders = @($results.Keys)
+            # Display in ListView - explicit header order (hashtable keys are unordered)
+            $displayHeaders = @("Version", "Total Devices", "% of Devices", "Installed", "Pending", "Failed", "Install Success %", "Is Current")
             UnhideItems -ItemNames @("listview", "ExportReportButton", "CopyReportButton")
             HideItems -ItemNames @("ResultsTextBox")
             FillDataListView -ListView $WPFlistview -Headers $displayHeaders -Data $results
-            
-            $currentVersionInfo = if ($currentVersion) { "Current Version: $currentVersion" } else { "Current Version: Unknown" }
+
+            if ($currentVersion) {
+                $currentVersionInfo = "Current Version: $currentVersion"
+                $currentVersionInfo += if ($null -ne $returnedData.CurrentVersionShare) { " (on $($returnedData.CurrentVersionShare)% of devices)" } else { " (not reported on any device yet)" }
+            } else {
+                $currentVersionInfo = "Current Version: Unknown"
+            }
+            $topVersionInfo = "Most Common Version: $($returnedData.TopVersion) ($($returnedData.TopVersionShare)% of devices)"
             $noteInfo = if ($note) { "`r`n`r`nNote: $note" } else { "" }
-            [System.Windows.MessageBox]::Show("App Version Distribution for:`r`n$appName`r`n`r`n$currentVersionInfo`r`nDevices Checked: $totalDevices`r`nUnique Versions Found: $uniqueVersions$noteInfo", "Report Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            [System.Windows.MessageBox]::Show("App Version Distribution for:`r`n$appName`r`n`r`n$currentVersionInfo`r`n$topVersionInfo`r`nDevices Checked: $totalDevices`r`nUnique Versions Found: $uniqueVersions$noteInfo", "Report Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
         } -OnError {
             param($exception)
             Write-Error "Failed to retrieve app version distribution: $($exception.Message)"

@@ -1214,6 +1214,150 @@ function Set-IntuneDeviceName {
 
 #endregion ==================== DEVICE RENAME FUNCTIONS ====================
 
+#region ==================== DROPDOWN SEARCH ====================
+
+# Dropdowns with at least this many items show a search box at the top of the list.
+# Shorter lists (e.g. "Single Device / Multiple Devices") don't need one.
+$script:ComboBoxSearchMinItems = 8
+
+function Get-ComboBoxItemText {
+    <#
+    .SYNOPSIS
+        Returns the display text of a ComboBox item (plain string or ComboBoxItem).
+    #>
+    param($Item)
+
+    if ($Item -is [System.Windows.Controls.ComboBoxItem]) {
+        return [string]$Item.Content
+    }
+    return [string]$Item
+}
+
+function Update-ComboBoxSearchFilter {
+    <#
+    .SYNOPSIS
+        Shows only the dropdown items that contain every word of the search text.
+    .DESCRIPTION
+        Items are hidden by collapsing their containers instead of filtering the
+        Items collection - filtering would clear the current selection and fire
+        SelectionChanged, which the tool uses to switch panels.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Controls.ComboBox]$ComboBox,
+
+        [string]$SearchText
+    )
+
+    $terms = @($SearchText -split '\s+' | Where-Object { $_ })
+    $visibleCount = 0
+
+    for ($i = 0; $i -lt $ComboBox.Items.Count; $i++) {
+        $container = $ComboBox.ItemContainerGenerator.ContainerFromIndex($i)
+        if ($null -eq $container) { continue }
+
+        $text = Get-ComboBoxItemText -Item $ComboBox.Items[$i]
+        $isMatch = $true
+        foreach ($term in $terms) {
+            if ($text.IndexOf($term, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+                $isMatch = $false
+                break
+            }
+        }
+
+        $container.Visibility = if ($isMatch) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+        if ($isMatch) { $visibleCount++ }
+    }
+
+    $noMatchesText = $ComboBox.Template.FindName("NoMatchesText", $ComboBox)
+    if ($noMatchesText) {
+        $noMatchesText.Visibility = if ($visibleCount -eq 0 -and $terms.Count -gt 0) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    }
+
+    $placeholder = $ComboBox.Template.FindName("SearchPlaceholder", $ComboBox)
+    if ($placeholder) {
+        $placeholder.Visibility = if ([string]::IsNullOrEmpty($SearchText)) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    }
+}
+
+function Enable-ComboBoxSearch {
+    <#
+    .SYNOPSIS
+        Adds type-to-search to a ComboBox that uses the app's ComboBox template.
+    .DESCRIPTION
+        When the dropdown opens and has at least $script:ComboBoxSearchMinItems items,
+        a search box appears at the top of the list and gets keyboard focus.
+        Typing filters the list (case-insensitive, all words must match).
+          - Down arrow : move from the search box into the filtered list
+          - Enter      : pick the first matching item
+          - Esc        : close the dropdown
+        The search is cleared every time the dropdown closes. The ComboBox stays
+        non-editable, so .Text / .SelectedItem / SelectionChanged behave as before.
+    .EXAMPLE
+        Enable-ComboBoxSearch -ComboBox $Form.FindName("ReportType")
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Controls.ComboBox]$ComboBox
+    )
+
+    $ComboBox.Add_DropDownOpened({
+        $combo = $this
+        $searchPanel = $combo.Template.FindName("SearchPanel", $combo)
+        $searchBox = $combo.Template.FindName("SearchBox", $combo)
+        if ($null -eq $searchPanel -or $null -eq $searchBox) { return }
+
+        # Wire the search box once (template parts only exist after the template is applied)
+        if ($searchBox.Tag -ne "SearchWired") {
+            $searchBox.Tag = "SearchWired"
+
+            $searchBox.Add_TextChanged({
+                Update-ComboBoxSearchFilter -ComboBox $this.TemplatedParent -SearchText $this.Text
+            })
+
+            $searchBox.Add_PreviewKeyDown({
+                param($searchSource, $e)
+                if ($e.Key -ne [System.Windows.Input.Key]::Down -and $e.Key -ne [System.Windows.Input.Key]::Enter) { return }
+
+                $parentCombo = $searchSource.TemplatedParent
+                for ($i = 0; $i -lt $parentCombo.Items.Count; $i++) {
+                    $container = $parentCombo.ItemContainerGenerator.ContainerFromIndex($i)
+                    if ($container -and $container.Visibility -eq [System.Windows.Visibility]::Visible -and $container.IsEnabled) {
+                        if ($e.Key -eq [System.Windows.Input.Key]::Enter) {
+                            $parentCombo.SelectedIndex = $i
+                            $parentCombo.IsDropDownOpen = $false
+                        } else {
+                            [void]$container.Focus()
+                        }
+                        break
+                    }
+                }
+                $e.Handled = $true
+            })
+        }
+
+        if ($combo.Items.Count -ge $script:ComboBoxSearchMinItems) {
+            $searchPanel.Visibility = [System.Windows.Visibility]::Visible
+            Update-ComboBoxSearchFilter -ComboBox $combo -SearchText $searchBox.Text
+            # Focus the search box after the ComboBox has finished its own focus handling on open
+            $focusSearch = { [void]$searchBox.Focus() }.GetNewClosure()
+            [void]$combo.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Input, [System.Action]$focusSearch)
+        } else {
+            $searchPanel.Visibility = [System.Windows.Visibility]::Collapsed
+        }
+    })
+
+    $ComboBox.Add_DropDownClosed({
+        $searchBox = $this.Template.FindName("SearchBox", $this)
+        if ($searchBox -and $searchBox.Text) {
+            # Clearing the text fires TextChanged, which makes every item visible again
+            $searchBox.Text = ""
+        }
+    })
+}
+
+#endregion ==================== DROPDOWN SEARCH ====================
+
 #region ==================== MODULE EXPORTS ====================
 # Explicitly export public functions
 Export-ModuleMember -Function @(
@@ -1240,7 +1384,8 @@ Export-ModuleMember -Function @(
     'HideItems',
     'FillDataListView',
     'Export-ListViewToCsv',
-    
+    'Enable-ComboBoxSearch',
+
     # Device rename functions
     'Get-IntuneDevicesForRename',
     'Set-IntuneDeviceName'
